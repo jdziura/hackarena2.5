@@ -250,76 +250,65 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
     std::optional<ResponseVariant> response;
     
-    int TIME_FOR_HEAL = 1000;
-
-    auto isHealingBullet = [&](const OrientedPosition& oPos, int timer) {
-        if (timer > TIME_FOR_HEAL) {
-            return false;
-        }
-
-        std::vector<std::pair<Bullet, Position>> bullets;
-        for (int i = 0; i < bot.dim; i++) {
-            for (int j = 0; j < bot.dim; j++) {
-                for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
-                    if (std::holds_alternative<Bullet>(object)) {
-                        const Bullet& bullet = std::get<Bullet>(object);
-                        if (bullet.type == BulletType::healing) {
-                            bullets.emplace_back(bullet, Position(i, j));
-                        }
-                    }
-                }
-            }
-        }
-
-        // calculate bullet positions after timer moves
-        for (auto [bullet, pos] : bullets) {
-            for (int i = 0; i < timer; i++) {
-                for (int j = 0; j < bullet.speed; j++) {
-                    pos.move(bullet.direction);
-                    if (!isValid(pos, bot.dim)) {
-                        break;
-                    }
-                    if (bot.wallType[pos.x][pos.y] == 2) {
-                        break;
-                    }
-                }
-            }
-            if (pos.x == oPos.pos.x && pos.y == oPos.pos.y  && bot.wallType[pos.x][pos.y] == 0) {
-                return true;
-            }
-        }
-
-        return false;
-    };
-
-    response = bfsStrategy(gameState, isHealingBullet);
-    if (response.has_value())
-        return response.value();
-
-    // std::cout << "nie ma heala" << ' ' << gameState.time << std::endl;
-    
     response = shootIfWillFireHitForSure(gameState);
     if (response.has_value()) 
-        return response.value();
-
-
+    return response.value();
+    
+    
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
     if (lastPos == myPos && gen() % 4 == 0) {
         response = shootIfSeeingEnemy(gameState);
         if (response.has_value())
-            return response.value();
+        return response.value();
         return BeDrunkInsideZone(gameState);
     }
-
+    
     auto bullet = closestBullet(gameState, myPos.pos);
     auto isOnBulletLine = [&](const OrientedPosition& oPos, int timer) {
         return oPos.pos.x != bullet.x && oPos.pos.y != bullet.y;
     };
-
+    
     if (bullet.x != 1e9) {
         response = bfsStrategy(gameState, isOnBulletLine);
         if (response.has_value())
+        return response.value();
+    }
+    
+    int TIME_FOR_HEAL = 10;
+    
+    std::vector<std::pair<Bullet, Position>> bullets = getHealingBullets(gameState);
+    std::optional<Tank> teammate = findTeammate(gameState, myId);
+    int teammate_health = 0;
+    if (teammate.has_value()) {
+        teammate_health = teammate.value().health.value_or(0);
+    }
+    if (bullets.size() > 0 && myTank.health.value_or(0) < teammate_health) {
+        auto isHealingBullet = [&](const OrientedPosition& oPos, int timer) {
+            if (timer > TIME_FOR_HEAL) {
+                return false;
+            }
+            
+            for (auto [bullet, pos] : bullets) {
+                for (int i = 0; i < timer; i++) {
+                    for (int j = 0; j < bullet.speed; j++) {
+                        pos.move(bullet.direction);
+                        if (!isValid(pos, bot.dim) || bot.wallType[pos.x][pos.y] == 2) {
+                            return false;
+                        }
+                    }
+                }
+                if (pos.x == oPos.pos.x && pos.y == oPos.pos.y  && bot.wallType[pos.x][pos.y] == 0) {
+                    return true;
+                }
+            }
+            
+            return false;
+        };
+    
+        response = bfsStrategy(gameState, isHealingBullet);
+        if (response.has_value()) {
             return response.value();
+        }
     }
 
     auto isZone = targetZone(bot.zoneName);
