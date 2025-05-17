@@ -29,7 +29,8 @@ class Bot {
     std::vector<std::vector<bool>> isWall;
 	std::vector<std::vector<int>> wallType;
     std::vector<std::vector<char>> zoneName;
-    std::vector<std::vector<bool>> isVisible;
+
+    int myTankIdx = -1;
 
     class TankState {
     public:
@@ -39,20 +40,38 @@ class Bot {
     
         Tank myTank;
         OrientedPosition myPos;
+        OrientedPosition lastPos;
         Direction myTurretDir;
         int myBulletCount = 3;
     
-        TankState(Bot& _bot, bool _isHeavy) : bot(_bot), isHeavy(_isHeavy) {
-            myId = bot.myId;
-        }
+        TankState(Bot& _bot, bool _isHeavy) : bot(_bot), isHeavy(_isHeavy) {}
     
+        std::optional<ResponseVariant> NextMove(const GameState& gameState);
         bool canSeeEnemy(const GameState& gameState) const;
         bool willFireHitForSure(const GameState& gameState) const;
         bool willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const;
         void initMyTankHelper(const GameState& gameState);
         void initMyTank(const GameState& gameState);
+
+        bool canMoveForwardInsideZone(const OrientedPosition& pos) const;
+        bool canMoveBackwardInsideZone(const OrientedPosition& pos) const;
+
+        ResponseVariant BeDrunkInsideZone(const GameState& gameState);
+
+        std::optional<ResponseVariant> shootIfSeeingEnemy(
+            const GameState& gameState, 
+            bool useLaserIfPossible = true, 
+            bool useDoubleBulletIfPossible = true
+        );
     
-        // TODO: Rerwrite
+        std::optional<ResponseVariant> shootIfWillFireHitForSure(
+            const GameState& gameState, 
+            bool useLaserIfPossible = true, 
+            bool useDoubleBulletIfPossible = true
+        );
+    
+        std::optional<ResponseVariant> rotateToEnemy(const GameState& gameState);
+
         template<class F>
         std::optional<ResponseVariant> shootIf(
                 const GameState& gameState, 
@@ -60,29 +79,58 @@ class Bot {
                 bool useLaserIfPossible = true, 
                 bool useDoubleBulletIfPossible = true
         ) {
-            return std::nullopt;
+            if (!isHeavy) {
+                useLaserIfPossible = false;
+            }
+            if (isHeavy) {
+                useDoubleBulletIfPossible = false;
+            }
+
+            bool ignoreBulletCount = useDoubleBulletIfPossible | useLaserIfPossible;
     
-            // bool ignoreBulletCount = (heldItem == SecondaryItemType::DoubleBullet && useDoubleBulletIfPossible);
-            // ignoreBulletCount |=     (heldItem == SecondaryItemType::Laser && useLaserIfPossible);
+            if (myBulletCount == 0 && !ignoreBulletCount) {
+                return std::nullopt;
+            }
     
-            // if (myBulletCount == 0 && !ignoreBulletCount)
-            // {
-            //     return std::nullopt;
-            // }
+            if (!f(gameState)) {
+                return std::nullopt;
+            }
     
-            // if (!f(gameState)) {
-            //     return std::nullopt;
-            // }
+            if (useLaserIfPossible) {
+                return AbilityUse{AbilityType::useLaser};
+            }
     
-            // if (useLaserIfPossible && heldItem == SecondaryItemType::Laser) {
-            //     return AbilityUse{AbilityType::useLaser};
-            // }
-    
-            // if (useDoubleBulletIfPossible && heldItem == SecondaryItemType::DoubleBullet) {
-            //     return AbilityUse{AbilityType::fireDoubleBullet};
-            // }
+            if (useDoubleBulletIfPossible) {
+                return AbilityUse{AbilityType::fireDoubleBullet};
+            }
             
-            // return AbilityUse{AbilityType::fireBullet};
+            return AbilityUse{AbilityType::fireBullet};
+        }
+
+        template<class F>
+        std::optional<ResponseVariant> bfsStrategy(const GameState& gameState, F&& f) {
+            auto result = bot.bfs(myPos, f);
+            if (!result) {
+                return std::nullopt;
+            }
+
+            auto nxtMove = result->move;
+            auto eta = result->eta;
+            auto nextPos = afterMove(myPos, nxtMove);
+
+            bool hitNow = willBeHitByBullet(gameState, myPos);
+            bool hitNxt = willBeHitByBullet(gameState, nextPos);
+
+            if (hitNxt && !hitNow) {
+                // TODO: wait or think about rotating?
+                return Wait{};
+            }
+
+            if (std::holds_alternative<MoveDirection>(nxtMove)) {
+                return Move{std::get<MoveDirection>(nxtMove)};
+            } else {
+                return Rotate{std::get<RotationDirection>(nxtMove), RotationDirection::none};
+            }
         }
     };
     

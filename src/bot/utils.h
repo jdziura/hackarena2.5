@@ -382,9 +382,9 @@ inline ResponseVariant rotateInDirection(const Direction& myDir, const Direction
 }
 
 
-inline std::function<bool(const OrientedPosition &, int timer)> targetZone(char zoneNameToTarget, const std::vector<std::vector<char>> &zoneName)
+inline std::function<bool(const OrientedPosition &, int timer)> targetZone(const std::vector<std::vector<char>> &zoneName)
 {
-    std::cout<<zoneNameToTarget<<std::endl;
+    const char zoneNameToTarget = 'A';
     return [&](const OrientedPosition &oPos, int timer)
     {
         return zoneName[oPos.pos.x][oPos.pos.y] == zoneNameToTarget;

@@ -271,6 +271,10 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
     return false;
 }
 
+inline bool isOneOfMyTanks(const Tank& tank) {
+    return tank.turret.bulletCount.has_value();
+}
+
 bool Bot::TankState::willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const {
     int x = pos.pos.x;
     int y = pos.pos.y;
@@ -286,9 +290,7 @@ bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
     auto [dx, dy] = Position::DIRECTIONS[dir];
 
     int bound = 2;
-    // if (heldItem == SecondaryItemType::Laser) {
-    //     bound = dim;
-    // }
+    // TODO: check if can fire laser and are heavy
 
     for (int i = 1; i < bound; i++) {
         x += dx;
@@ -337,6 +339,7 @@ void Bot::TankState::initMyTankHelper(const GameState& gameState) {
 }
 
 void Bot::TankState::initMyTank(const GameState& gameState) {
+    myId = bot.myId;
     initMyTankHelper(gameState);
     myTurretDir = myTank.turret.direction;
     assert (myTank.turret.bulletCount.has_value());
@@ -347,117 +350,253 @@ void Bot::initMyTanks(const GameState& gameState) {
     for (int i = 0; i < 2; i++) {
         tankState[i].initMyTank(gameState);
     }
+
+    myTankIdx = -1;
+    for (int i = 0; i < 2; i++) {
+        if (tankState[i].myId == myId) {
+            myTankIdx = i;
+            break;
+        }
+    }
+
+    assert(myTankIdx != -1);
+}
+
+std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameState) {
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+
+    std::optional<ResponseVariant> response;
+    
+    response = shootIfWillFireHitForSure(gameState);
+    if (response.has_value()) 
+        return response.value();
+
+
+    // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
+    if (lastPos == myPos && gen() % 4 == 0) {
+        response = shootIfSeeingEnemy(gameState);
+        if (response.has_value())
+            return response.value();
+        return BeDrunkInsideZone(gameState);
+    }
+
+    auto bullet = closestBullet(gameState, myPos.pos);
+    auto isOnBulletLine = [&](const OrientedPosition& oPos, int timer) {
+        return oPos.pos.x != bullet.x && oPos.pos.y != bullet.y;
+    };
+
+    if (bullet.x != 1e9) {
+        response = bfsStrategy(gameState, isOnBulletLine);
+        if (response.has_value())
+            return response.value();
+    }
+
+    auto isZone = targetZone(bot.zoneName);
+    if (isZone(myPos, 0)) {
+        return BeDrunkInsideZone(gameState);
+    }
+    
+    response = bfsStrategy(gameState, isZone);
+    if (response.has_value())
+        return response.value();
+    
+    // TODO: dziwny przypadek, jestśmy odizolowanie od strefy, można przemyśleć co z tym zrobić
+    return BeDrunkInsideZone(gameState);
 }
 
 ResponseVariant Bot::NextMove(const GameState& gameState) {
     std::cout << "Chuj " << gameState.time << ":" << std::endl;
     PrintMap(gameState.map.tiles);
-    onFirstNextMove(gameState);
 
-    // Find our tank and gather information
-    std::optional<Tank> ourTank;
-    std::optional<std::pair<int, int>> ourPosition;
-    for (size_t x = 0; x < gameState.map.tiles.size(); ++x) {
-        for (size_t y = 0; y < gameState.map.tiles[x].size(); ++y) {
-            const Tile& tile = gameState.map.tiles[x][y];
-            for (const TileVariant& object : tile.objects) {
-                if (std::holds_alternative<Tank>(object)) {
-                    const Tank& tank = std::get<Tank>(object);
-                    if (tank.ownerId == myId) {
-                        ourTank = tank;
-                        ourPosition = std::make_pair(x, y);
-                        break;
-                    }
-                }
-            }
-            if (ourTank.has_value()) break;
-        }
-        if (ourTank.has_value()) break;
+    if (gameState.time == 1) {
+        onFirstNextMove(gameState);
     }
 
-    // Create a random device and generator with a better seed
-    std::random_device rd;
-    std::mt19937 gen(rd() + gameState.time); // Add time to ensure different results each turn
+    for (int i = 0; i < 2; i++) {
+        tankState[i].lastPos = tankState[i].myPos;
+    }
 
-    // Choose an action with weighted probabilities
-    std::discrete_distribution<int> actionDist({25, 30, 35, 10}); // Weights for actions: Rotate, Move, Ability, Wait
-    int action = actionDist(gen);
+    initMyTanks(gameState);
+    knowledgeMap.update(gameState);
 
-    // Print what we're about to do
-    const char* actionNames[] = {"Rotate", "Move", "Use Ability", "Wait"};
-    std::cout << "Choosing action: " << actionNames[action] << std::endl;
+    std::optional<ResponseVariant> response;
+    
+    // mój czołg niezależnie robi ruch od reszty świata
+    response = tankState[myTankIdx].NextMove(gameState);
 
-    switch (action) {
-        case 0: { // Rotate
-            std::uniform_int_distribution<int> rotationDist(0, 2); // Include 'none' rotation
-            RotationDirection tankRot = static_cast<RotationDirection>(rotationDist(gen));
-            RotationDirection turretRot = static_cast<RotationDirection>(rotationDist(gen));
-            std::cout << "  Tank rotation: " <<
-                (tankRot == RotationDirection::left ? "left" :
-                 tankRot == RotationDirection::right ? "right" : "none") << std::endl;
-            std::cout << "  Turret rotation: " <<
-                (turretRot == RotationDirection::left ? "left" :
-                 turretRot == RotationDirection::right ? "right" : "none") << std::endl;
-            return Rotate{tankRot, turretRot};
-        }
-        case 1: { // Move
-            std::uniform_int_distribution<int> moveDist(0, 1);
-            MoveDirection moveDir = static_cast<MoveDirection>(moveDist(gen));
-            std::cout << "  Moving: " << (moveDir == MoveDirection::forward ? "forward" : "backward") << std::endl;
-            return Move{moveDir};
-        }
-        case 2: { // AbilityUse
-            // If we have tank info, determine which abilities we can use
-            if (ourTank.has_value()) {
-                std::vector<AbilityType> availableAbilities;
-                // Basic abilities any tank can use
-                availableAbilities.push_back(AbilityType::fireBullet);
-                // Check tank type for specific abilities
-                if (ourTank->tankType == TankType::Heavy) {
-                    availableAbilities.push_back(AbilityType::useLaser);
-                    availableAbilities.push_back(AbilityType::dropMine);
-                } else if (ourTank->tankType == TankType::Light) {
-                    availableAbilities.push_back(AbilityType::fireDoubleBullet);
-                    availableAbilities.push_back(AbilityType::useRadar);
+    // na razie forcujemy żeby się nie komunikowali i najwyżej losowy ruch robili
+    assert(response.has_value());
+
+    return response.value();
+}
+
+
+std::optional<ResponseVariant> Bot::TankState::shootIfSeeingEnemy(
+    const GameState& gameState, 
+    bool useLaserIfPossible, 
+    bool useDoubleBulletIfPossible
+) {
+    return shootIf(gameState, [&](const GameState& gameState) {
+        return canSeeEnemy(gameState);
+    }, useLaserIfPossible, useDoubleBulletIfPossible);
+}
+
+std::optional<ResponseVariant> Bot::TankState::shootIfWillFireHitForSure(
+    const GameState& gameState, 
+    bool useLaserIfPossible, 
+    bool useDoubleBulletIfPossible
+) {
+    return shootIf(gameState, [&](const GameState& gameState) {
+        return willFireHitForSure(gameState);
+    }, useLaserIfPossible, useDoubleBulletIfPossible);
+}
+
+std::optional<ResponseVariant> Bot::TankState::rotateToEnemy(const GameState& gameState) {
+    auto isVisibleEnemy = [&](const OrientedPosition& pos, int timer) {
+        if (!bot.knowledgeMap.isVisible[pos.pos.x][pos.pos.y])
+            return false;
+
+        for (const TileVariant& object : gameState.map.tiles[pos.pos.x][pos.pos.y].objects) {
+            if (std::holds_alternative<Tank>(object)) {
+                const Tank& tank = std::get<Tank>(object);
+                if (tank.ownerId != myId) {
+                    return true;
                 }
-                // Add healing and stun bullets for variety
-                availableAbilities.push_back(AbilityType::fireHealingBullet);
-                availableAbilities.push_back(AbilityType::fireStunBullet);
-                // Randomly select from available abilities
-                std::uniform_int_distribution<int> abilityDist(0, availableAbilities.size() - 1);
-                AbilityType ability = availableAbilities[abilityDist(gen)];
-                // Print the ability being used
-                std::string abilityName;
-                switch(ability) {
-                    case AbilityType::fireBullet: abilityName = "fire bullet"; break;
-                    case AbilityType::useLaser: abilityName = "use laser"; break;
-                    case AbilityType::fireDoubleBullet: abilityName = "fire double bullet"; break;
-                    case AbilityType::useRadar: abilityName = "use radar"; break;
-                    case AbilityType::dropMine: abilityName = "drop mine"; break;
-                    case AbilityType::fireHealingBullet: abilityName = "fire healing bullet"; break;
-                    case AbilityType::fireStunBullet: abilityName = "fire stun bullet"; break;
-                }
-                std::cout << "  Using ability: " << abilityName << std::endl;
-                return AbilityUse{ability};
-            } else {
-                // Fallback if we don't have tank info
-                std::uniform_int_distribution<int> abilityDist(0, 6);
-                AbilityType ability = static_cast<AbilityType>(abilityDist(gen));
-                return AbilityUse{ability};
             }
         }
-        case 3: // Wait
-        default: {
-            std::cout << "  Waiting this turn" << std::endl;
-            // Occasionally try to capture a zone instead of just waiting
-            std::uniform_int_distribution<int> captureOrWaitDist(0, 1);
-            bool shouldCapture = captureOrWaitDist(gen) == 1;
-            if (shouldCapture) {
-                std::cout << "  Actually, trying to capture a zone" << std::endl;
-                return CaptureZone{};
-            } else {
+
+        return false;
+    };
+
+    auto isPotentialEnemy = [&](const OrientedPosition& pos, int timer) {
+        if (bot.knowledgeMap.isVisible[pos.pos.x][pos.pos.y])
+            return false;
+
+        for (const KnowledgeTileVariant& object : bot.knowledgeMap.tiles[pos.pos.x][pos.pos.y].objects) {
+            if (std::holds_alternative<Tank>(object.object)) {
+                const Tank& tank = std::get<Tank>(object.object);
+                if (tank.ownerId != myId) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
+    auto result = bot.bfs(myPos, isVisibleEnemy);
+    if (!result.has_value()) {
+        result = bot.bfs(myPos, isPotentialEnemy);
+        if (!result.has_value()) {
+            return std::nullopt;
+        }
+    }
+
+    auto enemyPos = result.value().finalPos;
+
+    auto dx = enemyPos.pos.x - myPos.pos.x;
+    auto dy = enemyPos.pos.y - myPos.pos.y;
+
+    Direction desiredTankDir;
+    Direction desiredTurretDir;
+
+    if (dx >= abs(dy)) {
+        desiredTurretDir = Direction::down;
+        if (dy >= 0) {
+            desiredTankDir = Direction::right;
+        } else {
+            desiredTankDir = Direction::left;
+        }
+    } else if (dx <= -abs(dy)) {
+        desiredTurretDir = Direction::up;
+        if (dy >= 0) {
+            desiredTankDir = Direction::right;
+        } else {
+            desiredTankDir = Direction::left;
+        }
+    } else if (dy >= abs(dx)) {
+        desiredTurretDir = Direction::right;
+        if (dx >= 0) {
+            desiredTankDir = Direction::down;
+        } else {
+            desiredTankDir = Direction::up;
+        }
+    } else if (dy <= -abs(dx)) {
+        desiredTurretDir = Direction::left;
+        if (dx >= 0) {
+            desiredTankDir = Direction::down;
+        } else {
+            desiredTankDir = Direction::up;
+        }
+    }
+
+    auto tankRot = getRotationTo(myPos.dir, desiredTankDir);
+    auto turretRot = getRotationTo(myTurretDir, desiredTurretDir);
+
+    if (tankRot == RotationDirection::none && turretRot == RotationDirection::none) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+
+        if (gen() % 4 != 0) {
+            auto nxtPos = afterMove(myPos, MoveDirection::forward);
+            if (isValid(nxtPos.pos, bot.dim) && !bot.isWall[nxtPos.pos.x][nxtPos.pos.y]) {
+                return Move{MoveDirection::forward};
+            }
+            return BeDrunkInsideZone(gameState);
+        }
+
+        auto nxtPos = afterMove(myPos, MoveDirection::backward);
+        switch (gen() % 3) {
+            case 0:
+                if (isValid(nxtPos.pos, bot.dim) && !bot.isWall[nxtPos.pos.x][nxtPos.pos.y]) {
+                    return Move{MoveDirection::backward};
+                }
+                return BeDrunkInsideZone(gameState);
+            case 1:
                 return Wait{};
-            }
+            case 2:
+                return BeDrunkInsideZone(gameState);
         }
     }
+
+    return Rotate{tankRot, turretRot};
+}
+
+ResponseVariant Bot::TankState::BeDrunkInsideZone(const GameState& gameState) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    if (gen() % 2 == 0) {
+        bool canMoveForward = canMoveForwardInsideZone(myPos);
+        bool canMoveBackward = canMoveBackwardInsideZone(myPos);
+        if (canMoveForward && canMoveBackward) {
+            auto randomMove = static_cast<MoveDirection>(gen() % 2);
+            return Move{randomMove};
+        } else if (canMoveForward) {
+            return Move{MoveDirection::forward};
+        } else if (canMoveBackward) {
+            return Move{MoveDirection::backward};
+        }
+    }
+
+    auto randomRotation1 = static_cast<RotationDirection>(gen() % 2);
+    auto randomRotation2 = static_cast<RotationDirection>(gen() % 2);
+    return Rotate{randomRotation1, randomRotation2};
+}
+
+bool Bot::TankState::canMoveForwardInsideZone(const OrientedPosition& pos) const {
+    auto [dx, dy] = Position::DIRECTIONS[getDirId(pos.dir)];
+    auto nextPos = pos;
+    nextPos.pos.x += dx;
+    nextPos.pos.y += dy;
+    return isValid(nextPos.pos, bot.dim) && !bot.isWall[nextPos.pos.x][nextPos.pos.y] && bot.zoneName[nextPos.pos.x][nextPos.pos.y] != '?';
+}
+
+bool Bot::TankState::canMoveBackwardInsideZone(const OrientedPosition& pos) const {
+    auto [dx, dy] = Position::DIRECTIONS[getDirId(pos.dir)];
+    auto nextPos = pos;
+    nextPos.pos.x -= dx;
+    nextPos.pos.y -= dy;
+    return isValid(nextPos.pos, bot.dim) && !bot.isWall[nextPos.pos.x][nextPos.pos.y] && bot.zoneName[nextPos.pos.x][nextPos.pos.y] != '?';
 }
