@@ -197,6 +197,24 @@ void Bot::initIsWall(const std::vector<std::vector<Tile>>& tiles) {
     }
 }
 
+void Bot::initWallType(const std::vector<std::vector<Tile>>& tiles) {
+    wallType = std::vector<std::vector<int>>(dim, std::vector<int>(dim, 0));
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j < dim; ++j) {
+            for (const TileVariant& object : tiles[i][j].objects) {
+                if (std::holds_alternative<Wall>(object)) {
+                    const Wall& wall = std::get<Wall>(object);
+                    if (wall.type == WallType::solid) {
+                        wallType[i][j] = 2; // Solid wall
+                    } else if (wall.type == WallType::penetrable) {
+                        wallType[i][j] = 1; // Penetrable wall
+                    }
+                }
+            }
+        }
+    }
+}
+
 void Bot::initZoneName(const std::vector<std::vector<Tile>>& tiles) {
     zoneName = std::vector<std::vector<char>>(dim, std::vector<char>(dim, '?'));
     for (int i = 0; i < dim; ++i) {
@@ -208,6 +226,14 @@ void Bot::initZoneName(const std::vector<std::vector<Tile>>& tiles) {
 
 void Bot::onFirstNextMove(const GameState& gameState) {
     initIsWall(gameState.map.tiles);
+    initWallType(gameState.map.tiles);
+    // print wallType;
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j < dim; ++j) {
+            std::cout << wallType[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
     initZoneName(gameState.map.tiles);
 }
 
@@ -225,7 +251,7 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
         if (!isValid(Position(x, y), dim)) {
             break;
         }
-        if (bot.isWall[x][y]) {
+        if (bot.wallType[x][y] == 2) {
             break;
         }
         // if (!gameState.map.tiles[x][y].isVisible) {
@@ -272,7 +298,7 @@ bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
         if (!isValid(Position(x, y), dim)) {
             break;
         }
-        if (bot.isWall[x][y]) {
+        if (bot.wallType[x][y] == 2) {
             break;
         }
         // if (!gameState.map.tiles[x][y].isVisible) {
@@ -380,8 +406,8 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 }
 
 ResponseVariant Bot::NextMove(const GameState& gameState) {
-    std::cout << "Trzy kwaterki1 " << gameState.time << ":" << std::endl;
-    // PrintMap(gameState.map.tiles);
+    std::cout << "Chuj " << gameState.time << ":" << std::endl;
+    PrintMap(gameState.map.tiles);
 
     if (gameState.time == 1) {
         onFirstNextMove(gameState);

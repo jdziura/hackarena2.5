@@ -27,6 +27,7 @@ class Bot {
     int dim;
     KnowledgeMap knowledgeMap;
     std::vector<std::vector<bool>> isWall;
+	std::vector<std::vector<int>> wallType;
     std::vector<std::vector<char>> zoneName;
 
     int myTankIdx = -1;
@@ -137,6 +138,7 @@ class Bot {
 
     void onFirstNextMove(const GameState& gameState);
     void initIsWall(const std::vector<std::vector<Tile>>& tiles);
+    void initWallType(const std::vector<std::vector<Tile>>& tiles);
     void initZoneName(const std::vector<std::vector<Tile>>& tiles);
     void initMyTanks(const GameState& gameState);
 
@@ -179,7 +181,7 @@ class Bot {
                 int y = nextPos.pos.y;
                 int dir = getDirId(nextPos.dir);
 
-                if (isWall[x][y]) {
+                if (wallType[x][y] > 0) {
                     continue;
                 }
 
