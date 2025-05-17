@@ -8,6 +8,12 @@ import datetime
 import json
 from collections import defaultdict
 
+# Example how to run: python3 run_tests.py -n 20 -b basic basic -r --ticks 300
+# Path constants
+SERVER_PATH = "../linux-x64/GameServer"
+BOT_BINARIES_PATH = "../bot_binaries"
+DATA_DIR = "./data"
+
 
 def find_available_port(base_port, used_ports):
     """Finds the next available port starting from base_port that is not in used_ports."""
@@ -28,7 +34,7 @@ def is_port_available(port):
 def run_server(test_id, port, num_players, args, experiment_dir):
     replay_filepath = os.path.join(experiment_dir, f"replay_{test_id}.json")
     command = [
-        "../linux-x64/GameServer",
+        SERVER_PATH,
         "--host",
         args.host,
         "--port",
@@ -68,33 +74,37 @@ def run_server(test_id, port, num_players, args, experiment_dir):
 
 
 def run_bot(test_id, bot_name, bot_id, port, host, experiment_dir):
-    unique_nickname = f"bot_{test_id}_{bot_id}"
+    # Determine team and tank type based on bot_id
+    team = 1 if bot_id <= 2 else 2
+    tank_type = "heavy" if bot_id % 2 == 1 else "light"
+    
     command = [
-        f"./bot_binaries/{bot_name}",
-        "--nickname",
-        unique_nickname,
+        os.path.join(BOT_BINARIES_PATH, bot_name),
         "--host",
         host,
         "--port",
         str(port),
+        "--team-name",
+        str(team),
+        "--tank-type",
+        tank_type,
     ]
 
     log_file = os.path.join(experiment_dir, f"bot_{test_id}_{bot_id}.log")
     with open(log_file, "w") as log:
         print(
-            f"[INFO] Starting bot {bot_id} ({bot_name}) with nickname {unique_nickname} for test {test_id} on port {port}"
+            f"[INFO] Starting bot {bot_id} ({bot_name}) as {tank_type} tank for team {team} with tank-type {tank_type} for test {test_id} on port {port}"
         )
         print(f"[COMMAND] {' '.join(command)}")
-        # subprocess.Popen(command, stdout=log, stderr=log)
         subprocess.run(command, stdout=log, stderr=log)
 
 
 def summarize_results(experiment_dir, num_tests, num_players):
-    scores = defaultdict(int)
+    team_scores = defaultdict(int)
     draws = 0
     fails = 0
     for i in range(num_tests):
-        replay_file = os.path.join(experiment_dir, f"replay_{i}_results.json")
+        replay_file = os.path.join(experiment_dir, f"replay_{i}.json")
         if os.path.exists(replay_file):
             try:
                 with open(replay_file, "r") as file:
@@ -104,47 +114,53 @@ def summarize_results(experiment_dir, num_tests, num_players):
                         continue
 
                     replay_data = json.load(file)
-                    players = replay_data.get("players", [])
-
-                    # Sort players based on score and kills
-                    players.sort(key=lambda p: (p["score"], p["kills"]), reverse=True)
-
-                    # Check for a draw if all players have the same score and kills
-                    if len(players) > 0 and all(
-                        p["score"] == players[0]["score"]
-                        and p["kills"] == players[0]["kills"]
-                        for p in players
-                    ):
+                    
+                    # Check if replay has gameEnd section
+                    if "gameEnd" not in replay_data or "teams" not in replay_data["gameEnd"]:
+                        print(f"[WARNING] Replay file {replay_file} has invalid format.")
+                        fails += 1
+                        continue
+                    
+                    teams = replay_data["gameEnd"]["teams"]
+                    if len(teams) < 2:
+                        print(f"[WARNING] Replay file {replay_file} has insufficient team data.")
+                        fails += 1
+                        continue
+                    
+                    # Find teams by name
+                    team1 = next((t for t in teams if t["name"] == "1"), None)
+                    team2 = next((t for t in teams if t["name"] == "2"), None)
+                    
+                    if not team1 or not team2:
+                        print(f"[WARNING] Could not identify teams in {replay_file}.")
+                        fails += 1
+                        continue
+                    
+                    # Get team scores directly from the data
+                    team1_score = team1.get("score", 0)
+                    team2_score = team2.get("score", 0)
+                    
+                    if team1_score == team2_score:
                         draws += 1
+                    elif team1_score > team2_score:
+                        team_scores["Team 1"] += 1
                     else:
-                        # Allocate points based on the number of players
-                        points_distribution = {4: [3, 2, 1, 0], 3: [2, 1, 0], 2: [1, 0]}
-                        points = points_distribution.get(num_players)
-
-                        if points:
-                            for idx, player in enumerate(players):
-                                nickname = player.get("nickname")
-                                scores[nickname] += points[idx]
-                        else:
-                            print(f"[ERROR] Invalid number of players: {num_players}")
+                        team_scores["Team 2"] += 1
 
             except json.JSONDecodeError:
                 print(f"[ERROR] Failed to decode JSON in replay file {replay_file}.")
+                fails += 1
             except Exception as e:
-                print(f"[ERROR] An unexpected error occurred: {e}")
+                print(f"[ERROR] An unexpected error occurred with {replay_file}: {e}")
+                fails += 1
 
     # Summarize and print results
     print("\n=== Experiment Summary ===")
-    points = [0 for _ in range(num_players)]
-    for player, score in scores.items():
-        player_number = int(player.split("_")[-1]) - 1  # Extract player index (1-based)
-        if 0 <= player_number < num_players:
-            points[player_number] += score
-
-    for i, point in enumerate(points):
-        print(f"Player {i + 1}: {point} points")
+    print(f"Team 1: {team_scores['Team 1']} wins")
+    print(f"Team 2: {team_scores['Team 2']} wins")
     print(f"Draws: {draws} matches")
     print(f"Failed matches: {fails}")
+    print(f"Total matches processed: {team_scores['Team 1'] + team_scores['Team 2'] + draws + fails}/{num_tests}")
     print("=========================")
 
 
@@ -182,7 +198,7 @@ def main():
     parser.add_argument(
         "--broadcast-interval",
         type=int,
-        default=100,
+        default=500,
         help="Broadcast interval in milliseconds",
     )
     parser.add_argument(
@@ -194,14 +210,14 @@ def main():
     args = parser.parse_args()
 
     num_bots = len(args.bots)
-    if num_bots > 4:
-        print("[ERROR] You can only specify up to 4 bots.")
+    if num_bots > 2:
+        print("[ERROR] You can only specify up to 2 bots.")
         return
 
     # Create a unique directory for this experiment
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    experiment_dir = os.path.join("./data", f"experiment_{timestamp}")
-    os.makedirs(experiment_dir)
+    experiment_dir = os.path.join(DATA_DIR, f"experiment_{timestamp}")
+    os.makedirs(experiment_dir, exist_ok=True)
 
     used_ports = set()
     base_port = find_available_port(5000, used_ports)
@@ -224,30 +240,42 @@ def main():
 
             for i in range(current_batch_size):
                 executor.submit(
-                    run_server, test_ids[i], ports[i], num_bots, args, experiment_dir
+                    run_server, test_ids[i], ports[i], num_bots*2, args, experiment_dir
                 )
 
             time.sleep(1)
             print("[INFO] Waiting for 1 second before starting bots...")
 
             for i in range(current_batch_size):
-                for bot_id, bot_name in enumerate(args.bots, start=1):
+                for team_idx in range(1, 3):  # Teams 1 and 2
+                    bot_name = args.bots[team_idx-1] if len(args.bots) > 1 else args.bots[0]
+                    
+                    heavy_bot_id = (team_idx * 2) - 1
                     futures.append(
                         executor.submit(
                             run_bot,
                             test_ids[i],
                             bot_name,
-                            bot_id,
+                            heavy_bot_id,
                             ports[i],
                             args.host,
                             experiment_dir,
                         )
                     )
-
-                # total_time = args.broadcast_interval * args.ticks / 1000 + 5
-                # total_time = 10
-                # print(f"[INFO] Waiting for {total_time} seconds before the next batch...")
-                # time.sleep(total_time)
+                    
+                    # Create light tank (bot_id = 2 for team 1, 4 for team 2)
+                    light_bot_id = team_idx * 2
+                    futures.append(
+                        executor.submit(
+                            run_bot,
+                            test_ids[i],
+                            bot_name,
+                            light_bot_id,
+                            ports[i],
+                            args.host,
+                            experiment_dir,
+                        )
+                    )
         
         print("[INFO] Waiting for games to complete...")
         for future in futures:
