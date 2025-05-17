@@ -156,7 +156,7 @@ struct KnowledgeTile {
 
 struct KnowledgeMap {
     static constexpr int MAX_TRACK_TIME = 10;
-    static constexpr int MINE_TRACK_TIME = 100;
+    static constexpr int MINE_TRACK_TIME = 30;
 
     std::vector<std::vector<KnowledgeTile>> tiles;
     std::vector<std::vector<int>> minesLiveness;
@@ -208,7 +208,7 @@ struct KnowledgeMap {
     }
 
     void notifyMine(const GameState& gameState, const Position& pos) {
-        if(minesLiveness[pos.x][pos.y] == 0) {
+        if (minesLiveness[pos.x][pos.y] < -2 * MINE_TRACK_TIME) {
             minesLiveness[pos.x][pos.y] = MINE_TRACK_TIME;
         }
     }
@@ -285,9 +285,7 @@ struct KnowledgeMap {
 
         for (int i = 0; i < minesLiveness.size(); ++i) {
             for (int j = 0; j < minesLiveness[i].size(); ++j) {
-                if (minesLiveness[i][j] > 0) {
-                    --minesLiveness[i][j];
-                }
+                --minesLiveness[i][j];
             }
         }
     }
@@ -437,5 +435,17 @@ inline bool canShootHealing(const Tank& tank) {
 inline bool canShootStun(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
     auto ticks = tank.turret.ticksToStunBullet;
+    return ticks.has_value() && ticks.value() == 0;
+}
+
+inline bool canDropMine(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.ticksToMine;
+    return ticks.has_value() && ticks.value() == 0;
+}
+
+inline bool canUseRadar(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.ticksToRadar;
     return ticks.has_value() && ticks.value() == 0;
 }

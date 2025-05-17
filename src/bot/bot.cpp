@@ -247,20 +247,30 @@ void Bot::initMyTanks(const GameState& gameState) {
 std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameState) {
     static std::random_device rd;
     static std::mt19937 gen(rd());
+    static std::uniform_real_distribution<float> dist(0, 1);
 
     std::optional<ResponseVariant> response;
     
     response = shootIfWillFireHitForSure(gameState);
-    if (response.has_value()) 
+    if (response.has_value()) {
+        std::cout << __LINE__ << ": Fire, sure hit" << std::endl;
         return response.value();
+    }
 
 
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
-    if (lastPos == myPos && gen() % 4 == 0) {
+    if (lastPos == myPos && gen() % 16 == 0) {
+        std::cout << __LINE__ << ": Gowno" << std::endl;
         response = shootIfSeeingEnemy(gameState);
         if (response.has_value())
             return response.value();
         return BeDrunkInsideZone(gameState);
+    }
+
+    response = dodgeIfNoAmmoAndWillBeHit(gameState);
+    if (response.has_value()) {
+        std::cout << __LINE__ << ": Dodge" << std::endl;
+        return response.value();
     }
 
     auto bullet = closestBullet(gameState, myPos.pos);
@@ -270,23 +280,55 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
     if (bullet.x != 1e9) {
         response = bfsStrategy(gameState, isOnBulletLine);
-        if (response.has_value())
+        if (response.has_value()) {
+            std::cout << __LINE__ << ": Run from closest bullet" << std::endl;
             return response.value();
+        }
     }
+
+    response = dropMineIfReasonable(gameState);
+    if (response.has_value()) {
+        std::cout << __LINE__ << ": Drop mine" << std::endl;
+        return response.value();
+    }
+
+    response = useRadarIfPossible(gameState);
+    if (response.has_value()) {
+        std::cout << __LINE__ << ": Use radar" << std::endl;
+        return response.value();
+    }
+
 
     auto isZone = targetZone(bot.zoneName);
     if (isZone(myPos, 0)) {
-        if (gen() % 4 == 0) {
+        std::cout << __LINE__ << ": Inside zone" << std::endl;
+        float captureProb = bot.captureProb();
+        if (captureProb >= dist(gen)) {
+            std::cout << __LINE__ << ": Capturing (" << captureProb << ")" << std::endl;
+            return CaptureZone{};
+        }
+        else {
+            std::cout << __LINE__ << ": Not capturing (" << captureProb << ")" << std::endl;
+            response = shootIfSeeingEnemy(gameState, false, false);
+            if (response.has_value()) 
+                return response.value();
+        
+            response = rotateToEnemy(gameState);
+            if (response.has_value()) 
+                return response.value();
+
             return BeDrunkInsideZone(gameState);
         }
-        return CaptureZone{};
     }
     
     response = bfsStrategy(gameState, isZone);
-    if (response.has_value())
+    if (response.has_value()) {
+        std::cout << __LINE__ << ": Going to zone" << std::endl;
         return response.value();
+    }
     
     // TODO: dziwny przypadek, jestśmy odizolowanie od strefy, można przemyśleć co z tym zrobić
+    std::cout << __LINE__ << ": Deadlock, random" << std::endl;
     return BeDrunkInsideZone(gameState);
 }
 
@@ -302,6 +344,7 @@ ResponseVariant Bot::NextMove(const GameState& gameState) {
     }
 
     initMyTanks(gameState);
+    initShares(gameState);
     knowledgeMap.update(gameState);
 
     std::optional<ResponseVariant> response;
@@ -344,7 +387,7 @@ std::optional<ResponseVariant> Bot::TankState::rotateToEnemy(const GameState& ga
         for (const TileVariant& object : gameState.map.tiles[pos.pos.x][pos.pos.y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
-                if (tank.ownerId != myId) {
+                if (isEnemy(tank)) {
                     return true;
                 }
             }
@@ -360,7 +403,7 @@ std::optional<ResponseVariant> Bot::TankState::rotateToEnemy(const GameState& ga
         for (const KnowledgeTileVariant& object : bot.knowledgeMap.tiles[pos.pos.x][pos.pos.y].objects) {
             if (std::holds_alternative<Tank>(object.object)) {
                 const Tank& tank = std::get<Tank>(object.object);
-                if (tank.ownerId != myId) {
+                if (isEnemy(tank)) {
                     return true;
                 }
             }
@@ -483,4 +526,115 @@ bool Bot::TankState::canMoveBackwardInsideZone(const OrientedPosition& pos) cons
     nextPos.pos.x -= dx;
     nextPos.pos.y -= dy;
     return isValid(nextPos.pos, bot.dim) && !bot.isWall[nextPos.pos.x][nextPos.pos.y] && bot.zoneName[nextPos.pos.x][nextPos.pos.y] != '?';
+}
+
+std::optional<ResponseVariant> Bot::TankState::dropMineIfReasonable(const GameState& gameState) {
+    if (canDropMine(myTank) && (isBetweenWalls(myPos.pos, bot.isWall, bot.dim) || bot.zoneName[myPos.pos.x][myPos.pos.y] != '?')) {
+        auto [dx, dy] = Position::DIRECTIONS[getDirId(myPos.dir)];
+
+        Position minePos = myPos.pos;
+        minePos.x -= dx;
+        minePos.y -= dy;
+
+        if (!isValid(minePos, bot.dim) || bot.isWall[minePos.x][minePos.y]) {
+            return std::nullopt;
+        }
+
+        bot.knowledgeMap.notifyMine(gameState, minePos);
+
+        return AbilityUse{AbilityType::dropMine};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ResponseVariant> Bot::TankState::useRadarIfPossible(const GameState& gameState) {
+    if (canUseRadar(myTank)) {
+        return AbilityUse{AbilityType::useRadar};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ResponseVariant> Bot::TankState::dodgeIfNoAmmoAndWillBeHit(const GameState& gameState) {
+    for (int i = 0; i < 4; i++) {
+        auto [dx, dy] = Position::DIRECTIONS[i];
+
+        if (i == getDirId(myTurretDir)) {
+            if (myBulletCount > 0) {
+                continue;
+            }
+            if (canShootLaser(myTank)) {
+                continue;
+            }
+            if (canShootDouble(myTank)) {
+                continue;
+            }
+        }
+
+        for (int j = 1; j <= 2; j++) {
+            auto nextPos = myPos;
+            nextPos.pos.x += j * dx;
+            nextPos.pos.y += j * dy;
+
+            if (!isValid(nextPos.pos, bot.dim)) {
+                break;
+            }
+
+            if (bot.wallType[nextPos.pos.x][nextPos.pos.y] == 2) {
+                break;
+            }
+
+            for (const TileVariant& object : gameState.map.tiles[nextPos.pos.x][nextPos.pos.y].objects) {
+                if (std::holds_alternative<Tank>(object)) {
+                    const Tank& tank = std::get<Tank>(object);
+                    if (isEnemy(tank)) {
+                        if (getDirId(tank.turret.direction) == (i + 2) % 4) {
+                            if (!isParallel(myPos.dir, tank.turret.direction)) {
+                                for (auto mov : {MoveDirection::forward, MoveDirection::backward}) {
+                                    auto nxtPos = afterMove(myPos, mov);
+                                    if (isValid(nxtPos.pos, bot.dim) 
+                                     && !bot.isWall[nxtPos.pos.x][nxtPos.pos.y]
+                                     && !willBeHitByBullet(gameState, nxtPos)
+                                     && !bot.knowledgeMap.containsMine(nxtPos.pos)) 
+                                    {
+                                        return Move{mov};
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+void Bot::initShares(const GameState& gameState) {
+    assert(gameState.map.zones.size() == 1);
+    Zone zone = gameState.map.zones[0];
+    neutralShares = zone.status.neutral;
+    for (auto [id, shares] : zone.status.teamShares) {
+        if (id == teamName) {
+            myShares = shares;
+        }
+        else {
+            oppShares = shares;
+        }
+    }
+}
+
+float Bot::captureProb() const {
+    static constexpr float MAX_PROB = 0.9;
+    static constexpr float MIN_PROB = 0.1;
+
+    float allShares = myShares + oppShares + neutralShares + 0.01;
+    float result = (allShares - myShares) / allShares;
+
+    result = std::min(result, MAX_PROB);
+    result = std::max(result, MIN_PROB);
+
+    return result;
 }
