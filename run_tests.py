@@ -96,25 +96,7 @@ def run_bot(test_id, bot_name, bot_id, port, host, experiment_dir):
             f"[INFO] Starting bot {bot_id} ({bot_name}) as {tank_type} tank for team {team} with tank-type {tank_type} for test {test_id} on port {port}"
         )
         print(f"[COMMAND] {' '.join(command)}")
-        
-        # Try up to 3 times (initial + 2 retries)
-        for attempt in range(3):
-            try:
-                if attempt > 0:
-                    print(f"[INFO] Retry #{attempt} for bot {bot_id} on test {test_id}")
-                    log.write(f"\n[INFO] Retry #{attempt} for bot {bot_id}\n")
-                    time.sleep(1)  # Wait 1 second before retrying
-                
-                result = subprocess.run(command, stdout=log, stderr=log, check=True)
-                # If successful, break out of the retry loop
-                break
-            except subprocess.SubprocessError as e:
-                if attempt < 2:  # If we haven't used all retries yet
-                    print(f"[WARNING] Bot {bot_id} on test {test_id} failed, will retry in 1 second...")
-                    log.write(f"\n[WARNING] Bot failed, will retry. Error: {str(e)}\n")
-                else:
-                    print(f"[ERROR] Bot {bot_id} on test {test_id} failed after all retry attempts")
-                    log.write(f"\n[ERROR] Bot failed after all retry attempts. Error: {str(e)}\n")
+        subprocess.run(command, stdout=log, stderr=log)
 
 
 def summarize_results(experiment_dir, num_tests, num_players):
@@ -261,8 +243,8 @@ def main():
                     run_server, test_ids[i], ports[i], num_bots*2, args, experiment_dir
                 )
 
-            time.sleep(1)
-            print("[INFO] Waiting for 1 second before starting bots...")
+            time.sleep(2)
+            print("[INFO] Waiting for 2 second before starting bots...")
 
             for i in range(current_batch_size):
                 for team_idx in range(1, 3):  # Teams 1 and 2
