@@ -47,123 +47,6 @@ void Bot::OnGameEnded(const EndGameLobby& endGameLobby) {
     std::cout << "Thank you for playing!" << std::endl;
 }
 
-void Bot::PrintMap(const std::vector<std::vector<Tile>>& tiles) {
-    auto rows = tiles.size();
-    auto cols = tiles[0].size();
-
-    std::vector<std::vector<std::string>> map(rows, std::vector<std::string>(cols, " "));
-
-    // Map for converting wall types to symbols
-    std::map<WallType, char> wallSymbols = {
-        {WallType::solid, '#'},
-        {WallType::penetrable, '='}
-    };
-
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            const Tile& tile = tiles[i][j];
-
-            // Check for tile objects
-            bool hasObject = false;
-            for (const TileVariant& object : tile.objects) {
-                if (std::holds_alternative<Wall>(object)) {
-                    const Wall& wall = std::get<Wall>(object);
-                    map[i][j] = wallSymbols[wall.type]; // Display different wall types
-                    hasObject = true;
-                    break; // Found wall, no need to check further
-                } else if (std::holds_alternative<Tank>(object)) {
-                    if (auto tankPtr = std::get_if<Tank>(&object)) {
-                        auto tankId = tankPtr->ownerId;
-                        // Use '@' for player's tank, 'T' for enemy tanks
-                        std::string tankSymbol = (tankId != myId) ? "T" : "@";
-                        tankSymbol += (tankPtr->direction == Direction::up) ? "^" :
-                                      (tankPtr->direction == Direction::down) ? "v" :
-                                      (tankPtr->direction == Direction::left) ? "<" : ">";
-                        // Add tank type indicator
-                        tankSymbol += (tankPtr->tankType == TankType::Light) ? "L" : "H";
-                        map[i][j] = tankSymbol;
-                        hasObject = true;
-                        break;
-                    }
-                } else if (std::holds_alternative<Mine>(object)) {
-                    if (auto minePtr = std::get_if<Mine>(&object)) {
-                        // Show if mine is about to explode
-                        map[i][j] = minePtr->explosionRemainingTicks.has_value() ? '*' : 'X';
-                        hasObject = true;
-                    }
-                } else if (std::holds_alternative<Laser>(object)) {
-                    if (auto laserPtr = std::get_if<Laser>(&object)) {
-                        map[i][j] = (laserPtr->orientation == LaserOrientation::horizontal) ? '═' : '║';
-                        hasObject = true;
-                    }
-                } else if (std::holds_alternative<Bullet>(object)) {
-                    if (auto bulletPtr = std::get_if<Bullet>(&object)) {
-                        char bulletChar = '•'; // Default bullet symbol
-
-                        // Different symbols for different bullet types
-                        switch (bulletPtr->type) {
-                            case BulletType::basic:
-                                bulletChar = '•';
-                                break;
-                            case BulletType::doubleBullet:
-                                bulletChar = '◉';
-                                break;
-                            case BulletType::healing:
-                                bulletChar = '+';
-                                break;
-                            case BulletType::stun:
-                                bulletChar = '⚡';
-                                break;
-                        }
-
-                        map[i][j] = bulletChar;
-                        hasObject = true;
-                    }
-                }
-            }
-
-            // If no object found, check zone info
-            if (!hasObject) {
-                if (tile.zoneName != '?') {
-                    map[i][j] = tile.zoneName; // Print zone name
-                } else {
-                    map[i][j] = ' '; // Empty space
-                }
-            }
-        }
-    }
-
-    // Print the map with a border
-    std::cout << "┌";
-    for (size_t i = 0; i < cols * 2 - 1; ++i) {
-        std::cout << "─";
-    }
-    std::cout << "┐\n";
-
-    // Print the map
-    for (const auto& row : map) {
-        std::cout << "│";
-        for (size_t i = 0; i < row.size(); ++i) {
-            std::cout << row[i];
-            if (i < row.size() - 1) {
-                std::cout << " ";
-            }
-        }
-        std::cout << "│\n";
-    }
-
-    std::cout << "└";
-    for (size_t i = 0; i < cols * 2 - 1; ++i) {
-        std::cout << "─";
-    }
-    std::cout << "┘\n";
-    // Print legend
-    std::cout << "Legend: # - Solid Wall, = - Penetrable Wall, @ - Your Tank, T - Enemy Tank\n";
-    std::cout << "        • - Basic Bullet, ◉ - Double Bullet, + - Healing Bullet, ⚡ - Stun Bullet\n";
-    std::cout << "        X - Mine, * - Exploding Mine, ═ - Horizontal Laser, ║ - Vertical Laser\n";
-    std::cout << "---------------------------------------------------" << std::endl;
-}
-
 Bot::Bot() = default;
 
 void Bot::Init(const LobbyData& _lobbyData) {
@@ -254,14 +137,13 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
         if (bot.wallType[x][y] == 2) {
             break;
         }
-        // if (!gameState.map.tiles[x][y].isVisible) {
         if (!bot.knowledgeMap.isVisible[x][y]) {
             break;
         }
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
-                if (tank.ownerId != myId) {
+                if (isEnemy(tank)) {
                     return true;
                 }
             }
@@ -271,9 +153,6 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
     return false;
 }
 
-inline bool isOneOfMyTanks(const Tank& tank) {
-    return tank.turret.bulletCount.has_value();
-}
 
 bool Bot::TankState::willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const {
     int x = pos.pos.x;
@@ -290,7 +169,10 @@ bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
     auto [dx, dy] = Position::DIRECTIONS[dir];
 
     int bound = 2;
-    // TODO: check if can fire laser and are heavy
+
+    if (canShootLaser(myTank)) {
+        bound = dim;
+    }
 
     for (int i = 1; i < bound; i++) {
         x += dx;
@@ -308,8 +190,8 @@ bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
-                if (tank.ownerId == myId) {
-                    continue;
+                if (!isEnemy(tank)) {
+                    return false;
                 }
                 if (isParallel(myTurretDir, tank.direction)) {
                     return true;
@@ -407,7 +289,6 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
 ResponseVariant Bot::NextMove(const GameState& gameState) {
     std::cout << "Chuj " << gameState.time << ":" << std::endl;
-    PrintMap(gameState.map.tiles);
 
     if (gameState.time == 1) {
         onFirstNextMove(gameState);

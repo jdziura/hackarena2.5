@@ -406,3 +406,34 @@ inline bool isBetweenWalls(Position myPos, const std::vector<std::vector<bool>>&
     return false;
 }
 
+inline bool isOneOfMyTanks(const Tank& tank) {
+    return tank.turret.bulletCount.has_value();
+}
+
+inline bool isEnemy(const Tank& tank) {
+    return !isOneOfMyTanks(tank);
+}
+
+inline bool canShootLaser(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.turret.ticksToLaser;
+    return ticks.has_value() && ticks.value() == 0;
+}
+
+inline bool canShootDouble(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.turret.ticksToDoubleBullet;
+    return ticks.has_value() && ticks.value() == 0;
+}
+
+inline bool canShootHealing(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.turret.ticksToHealingBullet;
+    return ticks.has_value() && ticks.value() == 0;
+}
+
+inline bool canShootStun(const Tank& tank) {
+    assert(isOneOfMyTanks(tank));
+    auto ticks = tank.turret.ticksToStunBullet;
+    return ticks.has_value() && ticks.value() == 0;
+}

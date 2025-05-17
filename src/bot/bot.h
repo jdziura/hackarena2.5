@@ -3,9 +3,6 @@
 #include "../processed-packets.h"
 #include "utils.h"
 
-const int LIGHT = 0;
-const int HEAVY = 1;
-
 
 class Bot {
  public:
@@ -21,7 +18,6 @@ class Bot {
 	void OnGameEnded(const EndGameLobby& endGameLobby);
     void OnWarningReceived(WarningType warningType, std::optional<std::string>& message);
     void OnGameStarting();
-	void PrintMap(const std::vector<std::vector<Tile>>& tiles);
 
     LobbyData lobbyData;
     int dim;
@@ -35,7 +31,6 @@ class Bot {
     class TankState {
     public:
         Bot& bot; 
-        bool isHeavy;
         std::string myId;
     
         Tank myTank;
@@ -44,7 +39,7 @@ class Bot {
         Direction myTurretDir;
         int myBulletCount = 3;
     
-        TankState(Bot& _bot, bool _isHeavy) : bot(_bot), isHeavy(_isHeavy) {}
+        TankState(Bot& _bot) : bot(_bot) {}
     
         std::optional<ResponseVariant> NextMove(const GameState& gameState);
         bool canSeeEnemy(const GameState& gameState) const;
@@ -79,10 +74,10 @@ class Bot {
                 bool useLaserIfPossible = true, 
                 bool useDoubleBulletIfPossible = true
         ) {
-            if (!isHeavy) {
+            if (!canShootLaser(myTank)) {
                 useLaserIfPossible = false;
             }
-            if (isHeavy) {
+            if (!canShootDouble(myTank)) {
                 useDoubleBulletIfPossible = false;
             }
 
@@ -134,7 +129,7 @@ class Bot {
         }
     };
     
-    TankState tankState[2] = {TankState(*this, false), TankState(*this, true)};
+    TankState tankState[2] = {TankState(*this), TankState(*this)};
 
     void onFirstNextMove(const GameState& gameState);
     void initIsWall(const std::vector<std::vector<Tile>>& tiles);
