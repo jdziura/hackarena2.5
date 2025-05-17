@@ -47,6 +47,7 @@ class Bot {
     
         std::optional<ResponseVariant> NextMove(const GameState& gameState);
         bool canSeeEnemy(const GameState& gameState) const;
+        bool thereIsEnemyInTheZone(const GameState& gameState) const;
         bool willFireHitForSure(const GameState& gameState) const;
         bool willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const;
         void initMyTankHelper(const GameState& gameState);
@@ -60,13 +61,15 @@ class Bot {
         std::optional<ResponseVariant> shootIfSeeingEnemy(
             const GameState& gameState, 
             bool useLaserIfPossible = true, 
-            bool useDoubleBulletIfPossible = true
+            bool useDoubleBulletIfPossible = true,
+            bool useStunIfPossible = true
         );
     
         std::optional<ResponseVariant> shootIfWillFireHitForSure(
             const GameState& gameState, 
             bool useLaserIfPossible = true, 
-            bool useDoubleBulletIfPossible = true
+            bool useDoubleBulletIfPossible = true,
+            bool useStunIfPossible = true
         );
     
         std::optional<ResponseVariant> dropMineIfReasonable(const GameState& gameState);
@@ -80,7 +83,8 @@ class Bot {
                 const GameState& gameState, 
                 F&& f, 
                 bool useLaserIfPossible = true, 
-                bool useDoubleBulletIfPossible = true
+                bool useDoubleBulletIfPossible = true,
+                bool useStunIfPossible = true
         ) {
             if (!canShootLaser(myTank)) {
                 useLaserIfPossible = false;
@@ -88,8 +92,11 @@ class Bot {
             if (!canShootDouble(myTank)) {
                 useDoubleBulletIfPossible = false;
             }
+            if (!canShootStun(myTank)) {
+                useStunIfPossible = false;
+            }
 
-            bool ignoreBulletCount = useDoubleBulletIfPossible | useLaserIfPossible;
+            bool ignoreBulletCount = useDoubleBulletIfPossible | useLaserIfPossible | useStunIfPossible;
     
             if (myBulletCount == 0 && !ignoreBulletCount) {
                 return std::nullopt;
@@ -105,6 +112,10 @@ class Bot {
     
             if (useDoubleBulletIfPossible) {
                 return AbilityUse{AbilityType::fireDoubleBullet};
+            }
+
+            if (useStunIfPossible) {
+                return AbilityUse{AbilityType::fireStunBullet};
             }
             
             return AbilityUse{AbilityType::fireBullet};

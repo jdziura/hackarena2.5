@@ -6,45 +6,45 @@
 #include <string>
 
 void Bot::OnWarningReceived(WarningType warningType, std::optional<std::string> &message) {
-    std::cout << "Warning received: ";
-    switch (warningType) {
-        case WarningType::CustomWarning:
-            std::cout << "Custom warning";
-            if (message.has_value()) {
-                std::cout << " - " << message.value();
-            }
-            break;
-        case WarningType::PlayerAlreadyMadeActionWarning:
-            std::cout << "Player already made an action";
-            break;
-        case WarningType::ActionIgnoredDueToDeadWarning:
-            std::cout << "Action ignored because tank is dead";
-            break;
-        case WarningType::SlowResponseWarning:
-            std::cout << "Response was too slow";
-            break;
-        default:
-            std::cout << "Unknown warning type";
-    }
-    std::cout << std::endl;
+    // std::cout << "Warning received: ";
+    // switch (warningType) {
+    //     case WarningType::CustomWarning:
+    //         std::cout << "Custom warning";
+    //         if (message.has_value()) {
+    //             std::cout << " - " << message.value();
+    //         }
+    //         break;
+    //     case WarningType::PlayerAlreadyMadeActionWarning:
+    //         std::cout << "Player already made an action";
+    //         break;
+    //     case WarningType::ActionIgnoredDueToDeadWarning:
+    //         std::cout << "Action ignored because tank is dead";
+    //         break;
+    //     case WarningType::SlowResponseWarning:
+    //         std::cout << "Response was too slow";
+    //         break;
+    //     default:
+    //         std::cout << "Unknown warning type";
+    // }
+    // std::cout << std::endl;
 }
 
 void Bot::OnGameStarting() {
-    std::cout << "Game is starting!" << std::endl;
+    // std::cout << "Game is starting!" << std::endl;
 }
 
 void Bot::OnGameEnded(const EndGameLobby& endGameLobby) {
-    std::cout << "Game has ended! Final scores:" << std::endl;
-    for (const auto& team : endGameLobby.teams) {
-        std::cout << "Team " << team.name << ": " << team.score << " points" << std::endl;
-        std::cout << "  Players:" << std::endl;
-        for (const auto& player : team.players) {
-            std::cout << "    - " << player.id
-                      << " (Tank type: " << (player.tankType == TankType::Light ? "Light" : "Heavy")
-                      << ", Kills: " << player.kills << ")" << std::endl;
-        }
-    }
-    std::cout << "Thank you for playing!" << std::endl;
+    // std::cout << "Game has ended! Final scores:" << std::endl;
+    // for (const auto& team : endGameLobby.teams) {
+    //     std::cout << "Team " << team.name << ": " << team.score << " points" << std::endl;
+    //     std::cout << "  Players:" << std::endl;
+    //     for (const auto& player : team.players) {
+    //         std::cout << "    - " << player.id
+    //                   << " (Tank type: " << (player.tankType == TankType::Light ? "Light" : "Heavy")
+    //                   << ", Kills: " << player.kills << ")" << std::endl;
+    //     }
+    // }
+    // std::cout << "Thank you for playing!" << std::endl;
 }
 
 Bot::Bot() = default;
@@ -57,16 +57,17 @@ void Bot::Init(const LobbyData& _lobbyData) {
     skipResponse = lobbyData.broadcastInterval - 1;
     knowledgeMap.init(dim);
 
+    std::cout << "Good bot :) 1" << std::endl;
     // Print basic information about the game
-    std::cout << "Bot initialized with ID: " << myId << std::endl;
-    std::cout << "Team name: " << lobbyData.teamName << std::endl;
-    std::cout << "Grid dimension: " << lobbyData.gridDimension << std::endl;
-    std::cout << "Number of players: " << lobbyData.numberOfPlayers << std::endl;
-    // Print team information
-    std::cout << "Teams in game:" << std::endl;
-    for (const auto& team : lobbyData.teams) {
-        std::cout << "  Team: " << team.name << " (Players: " << team.players.size() << ")" << std::endl;
-    }
+    // std::cout << "Bot initialized with ID: " << myId << std::endl;
+    // std::cout << "Team name: " << lobbyData.teamName << std::endl;
+    // std::cout << "Grid dimension: " << lobbyData.gridDimension << std::endl;
+    // std::cout << "Number of players: " << lobbyData.numberOfPlayers << std::endl;
+    // // Print team information
+    // std::cout << "Teams in game:" << std::endl;
+    // for (const auto& team : lobbyData.teams) {
+    //     std::cout << "  Team: " << team.name << " (Players: " << team.players.size() << ")" << std::endl;
+    // }
 }
 
 void Bot::initIsWall(const std::vector<std::vector<Tile>>& tiles) {
@@ -110,13 +111,6 @@ void Bot::initZoneName(const std::vector<std::vector<Tile>>& tiles) {
 void Bot::onFirstNextMove(const GameState& gameState) {
     initIsWall(gameState.map.tiles);
     initWallType(gameState.map.tiles);
-    // print wallType;
-    for (int i = 0; i < dim; ++i) {
-        for (int j = 0; j < dim; ++j) {
-            std::cout << wallType[i][j] << " ";
-        }
-        std::cout << std::endl;
-    }
     initZoneName(gameState.map.tiles);
 }
 
@@ -138,13 +132,16 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
             break;
         }
         if (!bot.knowledgeMap.isVisible[x][y]) {
-            break;
+            continue;
         }
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
                 if (isEnemy(tank)) {
                     return true;
+                }
+                else {
+                    break;
                 }
             }
         }
@@ -183,9 +180,8 @@ bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
         if (bot.wallType[x][y] == 2) {
             break;
         }
-        // if (!gameState.map.tiles[x][y].isVisible) {
         if (!bot.knowledgeMap.isVisible[x][y]) {
-            break;
+            continue;
         }
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
@@ -253,14 +249,12 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     
     response = shootIfWillFireHitForSure(gameState);
     if (response.has_value()) {
-        std::cout << __LINE__ << ": Fire, sure hit" << std::endl;
         return response.value();
     }
 
 
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
     if (lastPos == myPos && gen() % 16 == 0) {
-        std::cout << __LINE__ << ": Gowno" << std::endl;
         response = shootIfSeeingEnemy(gameState);
         if (response.has_value())
             return response.value();
@@ -269,7 +263,6 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
     response = dodgeIfNoAmmoAndWillBeHit(gameState);
     if (response.has_value()) {
-        std::cout << __LINE__ << ": Dodge" << std::endl;
         return response.value();
     }
 
@@ -281,35 +274,28 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     if (bullet.x != 1e9) {
         response = bfsStrategy(gameState, isOnBulletLine);
         if (response.has_value()) {
-            std::cout << __LINE__ << ": Run from closest bullet" << std::endl;
             return response.value();
         }
     }
 
     response = dropMineIfReasonable(gameState);
     if (response.has_value()) {
-        std::cout << __LINE__ << ": Drop mine" << std::endl;
         return response.value();
     }
 
     response = useRadarIfPossible(gameState);
     if (response.has_value()) {
-        std::cout << __LINE__ << ": Use radar" << std::endl;
         return response.value();
     }
 
-
     auto isZone = targetZone(bot.zoneName);
     if (isZone(myPos, 0)) {
-        std::cout << __LINE__ << ": Inside zone" << std::endl;
-        float captureProb = bot.captureProb();
+        float captureProb = bot.captureProb() / 2;
         if (captureProb >= dist(gen)) {
-            std::cout << __LINE__ << ": Capturing (" << captureProb << ")" << std::endl;
             return CaptureZone{};
         }
         else {
-            std::cout << __LINE__ << ": Not capturing (" << captureProb << ")" << std::endl;
-            response = shootIfSeeingEnemy(gameState, false, false);
+            response = shootIfSeeingEnemy(gameState, false, false, false);
             if (response.has_value()) 
                 return response.value();
         
@@ -317,24 +303,25 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
             if (response.has_value()) 
                 return response.value();
 
-            return BeDrunkInsideZone(gameState);
+            if (gen() % 8 == 0) {
+                return BeDrunkInsideZone(gameState);
+            }
+            else {
+                return CaptureZone{};
+            }
         }
     }
     
     response = bfsStrategy(gameState, isZone);
     if (response.has_value()) {
-        std::cout << __LINE__ << ": Going to zone" << std::endl;
         return response.value();
     }
     
     // TODO: dziwny przypadek, jestśmy odizolowanie od strefy, można przemyśleć co z tym zrobić
-    std::cout << __LINE__ << ": Deadlock, random" << std::endl;
     return BeDrunkInsideZone(gameState);
 }
 
 ResponseVariant Bot::NextMove(const GameState& gameState) {
-    std::cout << "Chuj " << gameState.time << ":" << std::endl;
-
     if (gameState.time == 1) {
         onFirstNextMove(gameState);
     }
@@ -362,21 +349,23 @@ ResponseVariant Bot::NextMove(const GameState& gameState) {
 std::optional<ResponseVariant> Bot::TankState::shootIfSeeingEnemy(
     const GameState& gameState, 
     bool useLaserIfPossible, 
-    bool useDoubleBulletIfPossible
+    bool useDoubleBulletIfPossible,
+    bool useStunIfPossible
 ) {
     return shootIf(gameState, [&](const GameState& gameState) {
         return canSeeEnemy(gameState);
-    }, useLaserIfPossible, useDoubleBulletIfPossible);
+    }, useLaserIfPossible, useDoubleBulletIfPossible, useStunIfPossible);
 }
 
 std::optional<ResponseVariant> Bot::TankState::shootIfWillFireHitForSure(
     const GameState& gameState, 
     bool useLaserIfPossible, 
-    bool useDoubleBulletIfPossible
+    bool useDoubleBulletIfPossible,
+    bool useStunIfPossible
 ) {
     return shootIf(gameState, [&](const GameState& gameState) {
         return willFireHitForSure(gameState);
-    }, useLaserIfPossible, useDoubleBulletIfPossible);
+    }, useLaserIfPossible, useDoubleBulletIfPossible, useStunIfPossible);
 }
 
 std::optional<ResponseVariant> Bot::TankState::rotateToEnemy(const GameState& gameState) {
@@ -491,8 +480,8 @@ std::optional<ResponseVariant> Bot::TankState::rotateToEnemy(const GameState& ga
 }
 
 ResponseVariant Bot::TankState::BeDrunkInsideZone(const GameState& gameState) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
 
     if (gen() % 2 == 0) {
         bool canMoveForward = canMoveForwardInsideZone(myPos);
