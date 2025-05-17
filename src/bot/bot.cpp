@@ -252,19 +252,12 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     std::optional<ResponseVariant> response;
     
     response = shootIfWillFireHitForSure(gameState);
-    if (response.has_value()) 
-    return response.value();
-    
-    
-<<<<<<< HEAD
     if (response.has_value()) {
         std::cout << __LINE__ << ": Fire, sure hit" << std::endl;
         return response.value();
     }
+    
 
-
-=======
->>>>>>> 8373dd3f47a8602daeb2e200334fcdd7357eb8bc
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
     if (lastPos == myPos && gen() % 16 == 0) {
         std::cout << __LINE__ << ": Gowno" << std::endl;
@@ -274,16 +267,12 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
         return BeDrunkInsideZone(gameState);
     }
     
-<<<<<<< HEAD
-
     response = dodgeIfNoAmmoAndWillBeHit(gameState);
     if (response.has_value()) {
         std::cout << __LINE__ << ": Dodge" << std::endl;
         return response.value();
     }
 
-=======
->>>>>>> 8373dd3f47a8602daeb2e200334fcdd7357eb8bc
     auto bullet = closestBullet(gameState, myPos.pos);
     auto isOnBulletLine = [&](const OrientedPosition& oPos, int timer) {
         return oPos.pos.x != bullet.x && oPos.pos.y != bullet.y;
@@ -291,12 +280,10 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     
     if (bullet.x != 1e9) {
         response = bfsStrategy(gameState, isOnBulletLine);
-<<<<<<< HEAD
         if (response.has_value()) {
             std::cout << __LINE__ << ": Run from closest bullet" << std::endl;
-=======
-        if (response.has_value())
-        return response.value();
+            return response.value();
+        }
     }
     
     int TIME_FOR_HEAL = 10;
@@ -332,7 +319,6 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     
         response = bfsStrategy(gameState, isHealingBullet);
         if (response.has_value()) {
->>>>>>> 8373dd3f47a8602daeb2e200334fcdd7357eb8bc
             return response.value();
         }
     }
@@ -347,43 +333,6 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     if (response.has_value()) {
         std::cout << __LINE__ << ": Use radar" << std::endl;
         return response.value();
-    }
-    
-    int TIME_FOR_HEAL = 10;
-    
-    std::vector<std::pair<Bullet, Position>> bullets = getHealingBullets(gameState);
-    std::optional<Tank> teammate = findTeammate(gameState, myId);
-    int teammate_health = 0;
-    if (teammate.has_value()) {
-        teammate_health = teammate.value().health.value_or(0);
-    }
-    if (bullets.size() > 0 && myTank.health.value_or(0) < teammate_health) {
-        auto isHealingBullet = [&](const OrientedPosition& oPos, int timer) {
-            if (timer > TIME_FOR_HEAL) {
-                return false;
-            }
-            
-            for (auto [bullet, pos] : bullets) {
-                for (int i = 0; i < timer; i++) {
-                    for (int j = 0; j < bullet.speed; j++) {
-                        pos.move(bullet.direction);
-                        if (!isValid(pos, bot.dim) || bot.wallType[pos.x][pos.y] == 2) {
-                            return false;
-                        }
-                    }
-                }
-                if (pos.x == oPos.pos.x && pos.y == oPos.pos.y  && bot.wallType[pos.x][pos.y] == 0) {
-                    return true;
-                }
-            }
-            
-            return false;
-        };
-    
-        response = bfsStrategy(gameState, isHealingBullet);
-        if (response.has_value()) {
-            return response.value();
-        }
     }
 
 
