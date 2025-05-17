@@ -5,6 +5,48 @@
 #include <map>
 #include <string>
 
+void Bot::OnWarningReceived(WarningType warningType, std::optional<std::string> &message) {
+    std::cout << "Warning received: ";
+    switch (warningType) {
+        case WarningType::CustomWarning:
+            std::cout << "Custom warning";
+            if (message.has_value()) {
+                std::cout << " - " << message.value();
+            }
+            break;
+        case WarningType::PlayerAlreadyMadeActionWarning:
+            std::cout << "Player already made an action";
+            break;
+        case WarningType::ActionIgnoredDueToDeadWarning:
+            std::cout << "Action ignored because tank is dead";
+            break;
+        case WarningType::SlowResponseWarning:
+            std::cout << "Response was too slow";
+            break;
+        default:
+            std::cout << "Unknown warning type";
+    }
+    std::cout << std::endl;
+}
+
+void Bot::OnGameStarting() {
+    std::cout << "Game is starting!" << std::endl;
+}
+
+void Bot::OnGameEnded(const EndGameLobby& endGameLobby) {
+    std::cout << "Game has ended! Final scores:" << std::endl;
+    for (const auto& team : endGameLobby.teams) {
+        std::cout << "Team " << team.name << ": " << team.score << " points" << std::endl;
+        std::cout << "  Players:" << std::endl;
+        for (const auto& player : team.players) {
+            std::cout << "    - " << player.id
+                      << " (Tank type: " << (player.tankType == TankType::Light ? "Light" : "Heavy")
+                      << ", Kills: " << player.kills << ")" << std::endl;
+        }
+    }
+    std::cout << "Thank you for playing!" << std::endl;
+}
+
 void Bot::PrintMap(const std::vector<std::vector<Tile>>& tiles) {
     auto rows = tiles.size();
     auto cols = tiles[0].size();
@@ -124,9 +166,14 @@ void Bot::PrintMap(const std::vector<std::vector<Tile>>& tiles) {
 
 Bot::Bot() = default;
 
-void Bot::Init(const LobbyData& lobbyData) {
+void Bot::Init(const LobbyData& _lobbyData) {
+    lobbyData = _lobbyData;
+    dim = lobbyData.gridDimension;
     myId = lobbyData.myId;
+    teamName = lobbyData.teamName;
     skipResponse = lobbyData.broadcastInterval - 1;
+    knowledgeMap.init(dim);
+
     // Print basic information about the game
     std::cout << "Bot initialized with ID: " << myId << std::endl;
     std::cout << "Team name: " << lobbyData.teamName << std::endl;
@@ -139,8 +186,145 @@ void Bot::Init(const LobbyData& lobbyData) {
     }
 }
 
+void Bot::initIsWall(const std::vector<std::vector<Tile>>& tiles) {
+    isWall = std::vector<std::vector<bool>>(dim, std::vector<bool>(dim, false));
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j < dim; ++j) {
+            isWall[i][j] = std::any_of(tiles[i][j].objects.begin(), tiles[i][j].objects.end(), [](const TileVariant& object) {
+                return std::holds_alternative<Wall>(object);
+            });
+        }
+    }
+}
+
+void Bot::initZoneName(const std::vector<std::vector<Tile>>& tiles) {
+    zoneName = std::vector<std::vector<char>>(dim, std::vector<char>(dim, '?'));
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j < dim; ++j) {
+            zoneName[i][j] = tiles[i][j].zoneName;
+        }
+    }
+}
+
+void Bot::onFirstNextMove(const GameState& gameState) {
+    initIsWall(gameState.map.tiles);
+    initZoneName(gameState.map.tiles);
+}
+
+bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
+    const int dim = bot.dim;
+    int x = myPos.pos.x;
+    int y = myPos.pos.y;
+    int dir = getDirId(myTurretDir);
+
+    auto [dx, dy] = Position::DIRECTIONS[dir];
+
+    for (int i = 1; i < dim; ++i) {
+        x += dx;
+        y += dy;
+        if (!isValid(Position(x, y), dim)) {
+            break;
+        }
+        if (bot.isWall[x][y]) {
+            break;
+        }
+        // if (!gameState.map.tiles[x][y].isVisible) {
+        if (!bot.knowledgeMap.isVisible[x][y]) {
+            break;
+        }
+        for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
+            if (std::holds_alternative<Tank>(object)) {
+                const Tank& tank = std::get<Tank>(object);
+                if (tank.ownerId != myId) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+bool Bot::TankState::willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const {
+    int x = pos.pos.x;
+    int y = pos.pos.y;
+    return bot.knowledgeMap.willBeHitByBulletInNextMove(x, y);
+}
+
+bool Bot::TankState::willFireHitForSure(const GameState& gameState) const {
+    const int dim = bot.dim;
+    int x = myPos.pos.x;
+    int y = myPos.pos.y;
+    int dir = getDirId(myTurretDir);
+
+    auto [dx, dy] = Position::DIRECTIONS[dir];
+
+    int bound = 2;
+    // if (heldItem == SecondaryItemType::Laser) {
+    //     bound = dim;
+    // }
+
+    for (int i = 1; i < bound; i++) {
+        x += dx;
+        y += dy;
+        if (!isValid(Position(x, y), dim)) {
+            break;
+        }
+        if (bot.isWall[x][y]) {
+            break;
+        }
+        // if (!gameState.map.tiles[x][y].isVisible) {
+        if (!bot.knowledgeMap.isVisible[x][y]) {
+            break;
+        }
+        for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
+            if (std::holds_alternative<Tank>(object)) {
+                const Tank& tank = std::get<Tank>(object);
+                if (tank.ownerId == myId) {
+                    continue;
+                }
+                if (isParallel(myTurretDir, tank.direction)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+void Bot::TankState::initMyTankHelper(const GameState& gameState) {
+    for (int i = 0; i < bot.dim; i++) {
+        for (int j = 0; j < bot.dim; j++) {
+            for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
+                if (std::holds_alternative<Tank>(object)) {
+                    const Tank& tank = std::get<Tank>(object);
+                    if (tank.ownerId == myId) {
+                        myTank = tank;
+                        myPos = OrientedPosition{Position(i, j), tank.direction};
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void Bot::TankState::initMyTank(const GameState& gameState) {
+    initMyTankHelper(gameState);
+    myTurretDir = myTank.turret.direction;
+    assert (myTank.turret.bulletCount.has_value());
+    myBulletCount = myTank.turret.bulletCount.value();
+}
+
+void Bot::initMyTanks(const GameState& gameState) {
+    for (int i = 0; i < 2; i++) {
+        tankState[i].initMyTank(gameState);
+    }
+}
+
 ResponseVariant Bot::NextMove(const GameState& gameState) {
-    std::cout << "Turn " << gameState.time << ":" << std::endl;
+    std::cout << "Chuj " << gameState.time << ":" << std::endl;
     PrintMap(gameState.map.tiles);
 
     // Find our tank and gather information
@@ -249,46 +433,4 @@ ResponseVariant Bot::NextMove(const GameState& gameState) {
             }
         }
     }
-}
-
-void Bot::OnWarningReceived(WarningType warningType, std::optional<std::string> &message) {
-    std::cout << "Warning received: ";
-    switch (warningType) {
-        case WarningType::CustomWarning:
-            std::cout << "Custom warning";
-            if (message.has_value()) {
-                std::cout << " - " << message.value();
-            }
-            break;
-        case WarningType::PlayerAlreadyMadeActionWarning:
-            std::cout << "Player already made an action";
-            break;
-        case WarningType::ActionIgnoredDueToDeadWarning:
-            std::cout << "Action ignored because tank is dead";
-            break;
-        case WarningType::SlowResponseWarning:
-            std::cout << "Response was too slow";
-            break;
-        default:
-            std::cout << "Unknown warning type";
-    }
-    std::cout << std::endl;
-}
-
-void Bot::OnGameStarting() {
-    std::cout << "Game is starting!" << std::endl;
-}
-
-void Bot::OnGameEnded(const EndGameLobby& endGameLobby) {
-    std::cout << "Game has ended! Final scores:" << std::endl;
-    for (const auto& team : endGameLobby.teams) {
-        std::cout << "Team " << team.name << ": " << team.score << " points" << std::endl;
-        std::cout << "  Players:" << std::endl;
-        for (const auto& player : team.players) {
-            std::cout << "    - " << player.id
-                      << " (Tank type: " << (player.tankType == TankType::Light ? "Light" : "Heavy")
-                      << ", Kills: " << player.kills << ")" << std::endl;
-        }
-    }
-    std::cout << "Thank you for playing!" << std::endl;
 }

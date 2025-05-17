@@ -160,10 +160,13 @@ struct KnowledgeMap {
 
     std::vector<std::vector<KnowledgeTile>> tiles;
     std::vector<std::vector<int>> minesLiveness;
+    std::vector<std::vector<bool>> isVisible;
 
     void init(int dim) {
         tiles = std::vector<std::vector<KnowledgeTile>>(dim, std::vector<KnowledgeTile>(dim));
         minesLiveness = std::vector<std::vector<int>>(dim, std::vector<int>(dim, 0));
+        isVisible = std::vector<std::vector<bool>>(dim, std::vector<bool>(dim, false));
+        
     }
 
     bool isOnBulletTraj(int x, int y, int numTicks = 10) const {
@@ -215,9 +218,32 @@ struct KnowledgeMap {
     void update(const GameState& gameState) {
         std::vector<std::pair<Bullet, Position>> bullets;
 
+        for (auto&v : isVisible) fill(v.begin(), v.end(), false);
+
+        int myTanksCnt = 0;
         for (int i = 0; i < gameState.map.tiles.size(); ++i) {
             for (int j = 0; j < gameState.map.tiles[i].size(); ++j) {
-                if (gameState.map.tiles[i][j].isVisible) {
+                for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
+                    if (std::holds_alternative<Tank>(object)) {
+                        auto vis = std::get<Tank>(object).visibility;
+                        if (vis.has_value()) {
+                            myTanksCnt++;
+                            for (int x = 0; x < gameState.map.tiles.size(); x++) {
+                                for (int y = 0; y < gameState.map.tiles[x].size(); y++) {
+                                    if (vis.value()[x][y] == '1') {
+                                        isVisible[x][y] = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < gameState.map.tiles.size(); ++i) {
+            for (int j = 0; j < gameState.map.tiles[i].size(); ++j) {
+                if (isVisible[i][j]) {
                     tiles[i][j].objects.clear();
                     for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
                         if (std::holds_alternative<Mine>(object)) {
@@ -355,17 +381,6 @@ inline ResponseVariant rotateInDirection(const Direction& myDir, const Direction
     }
 }
 
-// types are captured, beingCaptured, neutral, beingContested, beingRetaken
-inline bool isZoneFree(const Zone &zone)
-{
-    return zone.status.type == "neutral";
-}
-
-inline bool isZoneCapturedByPlayer(const Zone &zone, const std::string &playerId)
-{
-    return zone.status.type == "captured" &&
-           zone.status.playerId == playerId;
-}
 
 inline std::function<bool(const OrientedPosition &, int timer)> targetZone(char zoneNameToTarget, const std::vector<std::vector<char>> &zoneName)
 {
@@ -373,14 +388,6 @@ inline std::function<bool(const OrientedPosition &, int timer)> targetZone(char 
     return [&](const OrientedPosition &oPos, int timer)
     {
         return zoneName[oPos.pos.x][oPos.pos.y] == zoneNameToTarget;
-    };
-}
-
-inline std::function<bool(const OrientedPosition &, int timer)> targetAnyZone(const std::vector<std::vector<char>> &zoneName)
-{
-    return [&](const OrientedPosition &oPos, int timer)
-    {
-        return zoneName[oPos.pos.x][oPos.pos.y] != '?';
     };
 }
 
