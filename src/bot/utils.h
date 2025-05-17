@@ -208,7 +208,9 @@ struct KnowledgeMap {
     }
 
     void notifyMine(const GameState& gameState, const Position& pos) {
-        minesLiveness[pos.x][pos.y] = MINE_TRACK_TIME;
+        if(minesLiveness[pos.x][pos.y] == 0) {
+            minesLiveness[pos.x][pos.y] = MINE_TRACK_TIME;
+        }
     }
 
     bool containsMine(const Position& pos) {
