@@ -416,36 +416,52 @@ inline bool isEnemy(const Tank& tank) {
 
 inline bool canShootLaser(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
+    if (tank.tankType != TankType::Heavy) {
+        return false;
+    }
+
     auto ticks = tank.turret.ticksToLaser;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
 
 inline bool canShootDouble(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
+    if (tank.tankType != TankType::Light) {
+        return false;
+    }
+
     auto ticks = tank.turret.ticksToDoubleBullet;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
 
 inline bool canShootHealing(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
     auto ticks = tank.turret.ticksToHealingBullet;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
 
 inline bool canShootStun(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
     auto ticks = tank.turret.ticksToStunBullet;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
 
 inline bool canDropMine(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
+    if (tank.tankType != TankType::Heavy) {
+        return false;
+    }
+
     auto ticks = tank.ticksToMine;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
 
 inline bool canUseRadar(const Tank& tank) {
     assert(isOneOfMyTanks(tank));
+    if (tank.tankType != TankType::Light) {
+        return false;
+    }
+
     auto ticks = tank.ticksToRadar;
-    return ticks.has_value() && ticks.value() == 0;
+    return !ticks.has_value() || ticks.value() == 0;
 }
