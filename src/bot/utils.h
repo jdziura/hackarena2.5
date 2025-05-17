@@ -465,3 +465,36 @@ inline bool canUseRadar(const Tank& tank) {
     auto ticks = tank.ticksToRadar;
     return !ticks.has_value() || ticks.value() == 0;
 }
+
+inline std::vector<std::pair<Bullet, Position>> getHealingBullets(const GameState& gameState) {
+    std::vector<std::pair<Bullet, Position>> bullets;
+    for (int i = 0; i < gameState.map.tiles.size(); ++i) {
+        for (int j = 0; j < gameState.map.tiles[i].size(); ++j) {
+            for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
+                if (std::holds_alternative<Bullet>(object)) {
+                    const Bullet& bullet = std::get<Bullet>(object);
+                    if (bullet.type == BulletType::healing) {
+                        bullets.emplace_back(bullet, Position(i, j));
+                    }
+                }
+            }
+        }
+    }
+    return bullets;
+}
+
+inline std::optional<Tank> findTeammate(const GameState& gameState, const std::string& myId) {
+    for (int i = 0; i < gameState.map.tiles.size(); ++i) {
+        for (int j = 0; j < gameState.map.tiles[i].size(); ++j) {
+            for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
+                if (std::holds_alternative<Tank>(object)) {
+                    const Tank& tank = std::get<Tank>(object);
+                    if (!isEnemy(tank) && tank.ownerId != myId) {
+                        return tank;
+                    }
+                }
+            }
+        }
+    }
+    return std::nullopt;
+}

@@ -120,7 +120,7 @@ void Bot::onFirstNextMove(const GameState& gameState) {
     initZoneName(gameState.map.tiles);
 }
 
-bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
+bool Bot::TankState::canSeeTank(const GameState& gameState, bool enemy) const {
     const int dim = bot.dim;
     int x = myPos.pos.x;
     int y = myPos.pos.y;
@@ -143,8 +143,14 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
-                if (isEnemy(tank)) {
-                    return true;
+                if (enemy) {
+                    if (isEnemy(tank)) {
+                        return true;
+                    }
+                } else {
+                    if (!isEnemy(tank) && tank.ownerId != myId && tank.health != 100) {
+                        return true;
+                    }
                 }
             }
         }
@@ -153,6 +159,13 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
     return false;
 }
 
+bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
+    return canSeeTank(gameState, true);
+}
+
+bool Bot::TankState::canSeeLowHpAlly(const GameState& gameState) const {
+    return canSeeTank(gameState, false);
+}
 
 bool Bot::TankState::willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const {
     int x = pos.pos.x;
@@ -252,21 +265,31 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     std::optional<ResponseVariant> response;
     
     response = shootIfWillFireHitForSure(gameState);
+    if (response.has_value()) 
+    return response.value();
+    
+    
+    response = shootIfWillFireHitForSure(gameState);    
     if (response.has_value()) {
         std::cout << __LINE__ << ": Fire, sure hit" << std::endl;
         return response.value();
     }
+    
 
+    response = healIfSeeingAlly(gameState);
+    if (response.has_value())
+        return response.value();
 
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
     if (lastPos == myPos && gen() % 16 == 0) {
         std::cout << __LINE__ << ": Gowno" << std::endl;
         response = shootIfSeeingEnemy(gameState);
         if (response.has_value())
-            return response.value();
+        return response.value();
         return BeDrunkInsideZone(gameState);
     }
-
+    
+    
     response = dodgeIfNoAmmoAndWillBeHit(gameState);
     if (response.has_value()) {
         std::cout << __LINE__ << ": Dodge" << std::endl;
@@ -277,7 +300,7 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     auto isOnBulletLine = [&](const OrientedPosition& oPos, int timer) {
         return oPos.pos.x != bullet.x && oPos.pos.y != bullet.y;
     };
-
+    
     if (bullet.x != 1e9) {
         response = bfsStrategy(gameState, isOnBulletLine);
         if (response.has_value()) {
@@ -285,7 +308,44 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
             return response.value();
         }
     }
-
+    
+    int TIME_FOR_HEAL = 10;
+    
+    std::vector<std::pair<Bullet, Position>> bullets = getHealingBullets(gameState);
+    std::optional<Tank> teammate = findTeammate(gameState, myId);
+    int teammate_health = 0;
+    if (teammate.has_value()) {
+        teammate_health = teammate.value().health.value_or(0);
+    }
+    if (bullets.size() > 0 && myTank.health.value_or(0) < teammate_health) {
+        auto isHealingBullet = [&](const OrientedPosition& oPos, int timer) {
+            if (timer > TIME_FOR_HEAL) {
+                return false;
+            }
+            
+            for (auto [bullet, pos] : bullets) {
+                for (int i = 0; i < timer; i++) {
+                    for (int j = 0; j < bullet.speed; j++) {
+                        pos.move(bullet.direction);
+                        if (!isValid(pos, bot.dim) || bot.wallType[pos.x][pos.y] == 2) {
+                            return false;
+                        }
+                    }
+                }
+                if (pos.x == oPos.pos.x && pos.y == oPos.pos.y  && bot.wallType[pos.x][pos.y] == 0) {
+                    return true;
+                }
+            }
+            
+            return false;
+        };
+    
+        response = bfsStrategy(gameState, isHealingBullet);
+        if (response.has_value()) {
+            return response.value();
+        }
+    }
+    
     response = dropMineIfReasonable(gameState);
     if (response.has_value()) {
         std::cout << __LINE__ << ": Drop mine" << std::endl;
@@ -333,7 +393,7 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 }
 
 ResponseVariant Bot::NextMove(const GameState& gameState) {
-    std::cout << "Chuj " << gameState.time << ":" << std::endl;
+    // // std::cout << "Chuj " << gameState.time << ":" << std::endl;
 
     if (gameState.time == 1) {
         onFirstNextMove(gameState);
@@ -367,6 +427,15 @@ std::optional<ResponseVariant> Bot::TankState::shootIfSeeingEnemy(
     return shootIf(gameState, [&](const GameState& gameState) {
         return canSeeEnemy(gameState);
     }, useLaserIfPossible, useDoubleBulletIfPossible);
+}
+
+std::optional<ResponseVariant> Bot::TankState::healIfSeeingAlly(const GameState& gameState) {
+    
+    if (canShootHealing(myTank) && canSeeLowHpAlly(gameState)) {
+        std::cout << "healing!" << std::endl;
+            return AbilityUse{AbilityType::fireHealingBullet};
+    }
+    return std::nullopt;
 }
 
 std::optional<ResponseVariant> Bot::TankState::shootIfWillFireHitForSure(

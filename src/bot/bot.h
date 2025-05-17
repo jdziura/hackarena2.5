@@ -47,6 +47,9 @@ class Bot {
     
         std::optional<ResponseVariant> NextMove(const GameState& gameState);
         bool canSeeEnemy(const GameState& gameState) const;
+        bool canSeeLowHpAlly(const GameState& gameState) const;
+        bool canSeeTank(const GameState& gameState, bool enemy) const;
+
         bool willFireHitForSure(const GameState& gameState) const;
         bool willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const;
         void initMyTankHelper(const GameState& gameState);
@@ -68,6 +71,10 @@ class Bot {
             bool useLaserIfPossible = true, 
             bool useDoubleBulletIfPossible = true
         );
+        
+        std::optional<ResponseVariant> healIfSeeingAlly(
+            const GameState& gameState
+        );
     
         std::optional<ResponseVariant> dropMineIfReasonable(const GameState& gameState);
         std::optional<ResponseVariant> useRadarIfPossible(const GameState& gameState);
@@ -82,6 +89,7 @@ class Bot {
                 bool useLaserIfPossible = true, 
                 bool useDoubleBulletIfPossible = true
         ) {
+
             if (!canShootLaser(myTank)) {
                 useLaserIfPossible = false;
             }
