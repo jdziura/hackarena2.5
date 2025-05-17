@@ -276,7 +276,10 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
     auto isZone = targetZone(bot.zoneName);
     if (isZone(myPos, 0)) {
-        return BeDrunkInsideZone(gameState);
+        if (gen() % 4 == 0) {
+            return BeDrunkInsideZone(gameState);
+        }
+        return CaptureZone{};
     }
     
     response = bfsStrategy(gameState, isZone);
