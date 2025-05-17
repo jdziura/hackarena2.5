@@ -156,7 +156,7 @@ struct KnowledgeTile {
 
 struct KnowledgeMap {
     static constexpr int MAX_TRACK_TIME = 10;
-    static constexpr int MINE_TRACK_TIME = 30;
+    static constexpr int MINE_TRACK_TIME = 500;
 
     std::vector<std::vector<KnowledgeTile>> tiles;
     std::vector<std::vector<int>> minesLiveness;
@@ -208,7 +208,7 @@ struct KnowledgeMap {
     }
 
     void notifyMine(const GameState& gameState, const Position& pos) {
-        if (minesLiveness[pos.x][pos.y] < -2 * MINE_TRACK_TIME) {
+        if (minesLiveness[pos.x][pos.y] <= 0) {
             minesLiveness[pos.x][pos.y] = MINE_TRACK_TIME;
         }
     }

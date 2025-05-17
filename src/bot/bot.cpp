@@ -362,7 +362,7 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
     auto isZone = targetZone(bot.zoneName);
     if (isZone(myPos, 0)) {
         std::cout << __LINE__ << ": Inside zone" << std::endl;
-        float captureProb = bot.captureProb();
+        float captureProb = bot.captureProb() * 0.8;
         if (captureProb >= dist(gen)) {
             std::cout << __LINE__ << ": Capturing (" << captureProb << ")" << std::endl;
             return CaptureZone{};
@@ -377,7 +377,11 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
             if (response.has_value()) 
                 return response.value();
 
-            return BeDrunkInsideZone(gameState);
+            if (gen() % 4 == 0) {
+                return BeDrunkInsideZone(gameState);
+            }
+
+            return CaptureZone{};
         }
     }
     
