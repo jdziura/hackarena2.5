@@ -269,6 +269,7 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
         std::cout << __LINE__ << ": Fire, sure hit" << std::endl;
         return response.value();
     }
+    
 
     response = healIfSeeingAlly(gameState);
     if (response.has_value())
@@ -283,7 +284,6 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
         return BeDrunkInsideZone(gameState);
     }
     
-
     response = dodgeIfNoAmmoAndWillBeHit(gameState);
     if (response.has_value()) {
         std::cout << __LINE__ << ": Dodge" << std::endl;
