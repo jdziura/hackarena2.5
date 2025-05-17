@@ -2,28 +2,46 @@
 
 #pragma once
 
+enum class TankType {
+	Light = 0,
+	Heavy = 1
+};
+
 /// First received list of players
 struct LobbyPlayer {
 	std::string id;
-	std::string nickname;
+	TankType tankType;
+};
+
+/// First received list of teams
+struct LobbyTeams {
+	std::string name;
 	uint32_t color;
+	std::vector<LobbyPlayer> players;
 };
 
 /// Player received at game end
 struct EndGamePlayer {
     std::string id;
-    std::string nickname;
-    uint32_t color;
-    int score;
+    int kills;
+    TankType tankType;
+};
+
+struct EndGameTeam {
+	std::string name;
+	uint32_t color;
+	int score;
+	std::vector<EndGamePlayer> players;
 };
 
 struct EndGameLobby {
-    std::vector<EndGamePlayer> players;
+    std::vector<EndGameTeam> teams;
 };
 
 struct LobbyData {
 	std::string myId;
-	std::vector<LobbyPlayer> players;
+	std::string teamName;
+	std::vector<LobbyTeams> teams;
     bool sandboxMode;
     std::optional<std::string> matchName;
 	int gridDimension;
@@ -49,7 +67,13 @@ struct Turret {
     /// Not present in enemies
 	std::optional<int> bulletCount;
     /// Not present in enemies
-	std::optional<int> ticksToRegenBullet;
+	std::optional<int> ticksToBullet;
+	/// Only in light tanks, not present in enemies
+	std::optional<int> ticksToDoubleBullet;
+	/// Only in heavy tanks, not present in enemies
+	std::optional<int> ticksToLaser;
+	std::optional<int> ticksToHealingBullet;
+	std::optional<int> ticksToStunBullet;
 };
 
 enum class SecondaryItemType {
@@ -63,16 +87,31 @@ enum class SecondaryItemType {
 /// TankPayload struct
 struct Tank {
 	std::string ownerId;
+	TankType tankType;
     Direction direction;
 	Turret turret;
     /// Not present in enemies
 	std::optional<int> health;
-    std::optional<SecondaryItemType> secondaryItem;
+	/// Only in heavy tanks, not present in enemies
+	std::optional<int> ticksToMine;
+	/// Only in light tanks, not present in enemies
+	std::optional<int> ticksToRadar;
+	/// Only in light tanks
+	std::optional<bool> isUsingRadar;
+	/// 2D array of chars ('0' or '1') same as tiles
+	std::optional<std::vector<std::vector<char>>> visibility;
+};
+
+enum class WallType {
+	solid = 0,
+	penetrable = 1
 };
 
 enum class BulletType {
-    bullet = 0,
-    doubleBullet = 1
+    basic = 0,
+    doubleBullet = 1,
+	healing = 2,
+	stun = 3
 };
 
 /// BulletPayload struct
@@ -98,17 +137,10 @@ struct Mine {
     std::optional<int> explosionRemainingTicks;
 };
 
-/// ZoneStatus struct to represent various zone states
-struct ZoneStatus {
-	std::string type;
-    /// Used in "beingCaptured" and "beingRetaken"
-	std::optional<int> remainingTicks;
-    /// Used in "beingCaptured" and "captured"
-	std::optional<std::string> playerId;
-    /// Used in "beingContested" and "beingRetaken"
-	std::optional<std::string> capturedById;
-    /// Used in "beingRetaken"
-	std::optional<std::string> retakenById;
+/// ZoneShares struct to represent various zone shares
+struct ZoneShares {
+	float neutral;
+	std::map<std::string, float> teamShares;
 };
 
 /// Zone struct to represent a zone on the map
@@ -118,41 +150,34 @@ struct Zone {
 	int width;
 	int height;
 	char name;
-	ZoneStatus status;
+	ZoneShares status;
 };
 
 // Player struct
 struct Player {
 	std::string id;
-	std::string nickname;
-	uint32_t color;
 	int ping;
     /// Not present in enemies
 	std::optional<int> score;
-    /// Optional because it might be null
+    /// Optional because it might be null (it is present only if you are this player)
 	std::optional<int> ticksToRegen;
-    bool isUsingRadar;
 };
 
-struct Wall {};
-
-enum class ItemType {
-    unknown = 0,
-    laser = 1,
-	doubleBullet = 2,
-    radar = 3,
-    mine = 4
+struct Team {
+	std::string name;
+	uint32_t color;
+	std::optional<int> score;
+	std::vector<Player> players;
 };
 
-struct Item {
-    ItemType type;
+struct Wall {
+	WallType type;
 };
 
-using TileVariant = std::variant<Wall, Tank, Bullet, Mine, Laser, Item>;
+using TileVariant = std::variant<Wall, Tank, Bullet, Mine, Laser>;
 
 struct Tile {
     std::vector<TileVariant> objects;
-    bool isVisible;
     char zoneName; // '?' or 63 for no zone
 };
 
@@ -165,15 +190,14 @@ struct Map {
 	/// A 2D vector to hold variants of tile objects
 	std::vector<std::vector<Tile>> tiles;
 	std::vector<Zone> zones;
-    /// 2D array of chars ('0' or '1') same as tiles
-	std::vector<std::vector<char>> visibility;
 };
 
 /// GameState struct
 struct GameState {
     /// tick number
 	int time;
-	std::vector<Player> players;
+	std::vector<Team> teams;
+	std::optional<std::string> playerId;
 	Map map;
 };
 
@@ -202,7 +226,9 @@ enum class AbilityType {
     useLaser = 1,
 	fireDoubleBullet = 2,
     useRadar = 3,
-    dropMine = 4
+    dropMine = 4,
+	fireHealingBullet = 5,
+	fireStunBullet = 6,
 };
 
 struct AbilityUse {
@@ -211,7 +237,42 @@ struct AbilityUse {
 
 struct Wait {};
 
-using ResponseVariant = std::variant<Rotate, Move, AbilityUse, Wait>;
+struct CaptureZone {};
+
+// For per-tile penalties
+struct PerTilePenalty {
+	int x;
+	int y;
+	float penalty;
+};
+
+// Penalties structure - can be null entirely, in which case pathfinding won't apply any penalties
+struct GotoPenalties {
+	std::optional<float> blindly;   // Can be null, in which case pathfinding won't penalize going blindly
+	std::optional<float> tank;      // Can be null, in which case pathfinding won't penalize going through tanks
+	std::optional<float> bullet;    // Can be null, in which case pathfinding won't penalize going through bullets
+	std::optional<float> mine;      // Can be null, in which case pathfinding won't penalize going through mines
+	std::optional<float> laser;     // Can be null, in which case pathfinding won't penalize going through lasers
+	std::vector<PerTilePenalty> perTile; // Specific per-tile penalties
+};
+
+// Costs structure with default values
+struct GotoCosts {
+	float forward = 1.0f;       // Default value: 1.0
+	float backward = 1.5f;      // Default value: 1.5
+	float rotate = 1.5f;        // Default value: 1.5
+};
+
+// Complete GoTo structure
+struct GoTo {
+	int x;                                      // Target x coordinate
+	int y;                                      // Target y coordinate
+	std::optional<RotationDirection> turretRotation; // Optional turret rotation (left/0, right/1)
+	std::optional<GotoCosts> costs;             // Optional movement costs
+	std::optional<GotoPenalties> penalties;     // Optional penalties, can be null to disable all penalties
+};
+
+using ResponseVariant = std::variant<Rotate, Move, AbilityUse, Wait, GoTo, CaptureZone>;
 
 enum class WarningType {
     CustomWarning,
