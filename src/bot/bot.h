@@ -28,6 +28,10 @@ class Bot {
 
     int myTankIdx = -1;
 
+    float myShares;
+    float oppShares;
+    float neutralShares;
+
     class TankState {
     public:
         Bot& bot; 
@@ -65,7 +69,11 @@ class Bot {
             bool useDoubleBulletIfPossible = true
         );
     
+        std::optional<ResponseVariant> dropMineIfReasonable(const GameState& gameState);
+        std::optional<ResponseVariant> useRadarIfPossible(const GameState& gameState);
+
         std::optional<ResponseVariant> rotateToEnemy(const GameState& gameState);
+        std::optional<ResponseVariant> dodgeIfNoAmmoAndWillBeHit(const GameState& gameState);
 
         template<class F>
         std::optional<ResponseVariant> shootIf(
@@ -136,6 +144,9 @@ class Bot {
     void initWallType(const std::vector<std::vector<Tile>>& tiles);
     void initZoneName(const std::vector<std::vector<Tile>>& tiles);
     void initMyTanks(const GameState& gameState);
+    void initShares(const GameState& gameState);
+
+    float captureProb() const;
 
     struct BfsResult {
         MoveOrRotation move;
