@@ -264,6 +264,54 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
 
     std::optional<ResponseVariant> response;
     
+    int TIME_FOR_HEAL = 1000;
+
+    auto isHealingBullet = [&](const OrientedPosition& oPos, int timer) {
+        if (timer > TIME_FOR_HEAL) {
+            return false;
+        }
+
+        std::vector<std::pair<Bullet, Position>> bullets;
+        for (int i = 0; i < bot.dim; i++) {
+            for (int j = 0; j < bot.dim; j++) {
+                for (const TileVariant& object : gameState.map.tiles[i][j].objects) {
+                    if (std::holds_alternative<Bullet>(object)) {
+                        const Bullet& bullet = std::get<Bullet>(object);
+                        if (bullet.type == BulletType::healing) {
+                            bullets.emplace_back(bullet, Position(i, j));
+                        }
+                    }
+                }
+            }
+        }
+
+        // calculate bullet positions after timer moves
+        for (auto [bullet, pos] : bullets) {
+            for (int i = 0; i < timer; i++) {
+                for (int j = 0; j < bullet.speed; j++) {
+                    pos.move(bullet.direction);
+                    if (!isValid(pos, bot.dim)) {
+                        break;
+                    }
+                    if (bot.wallType[pos.x][pos.y] == 2) {
+                        break;
+                    }
+                }
+            }
+            if (pos.x == oPos.pos.x && pos.y == oPos.pos.y  && bot.wallType[pos.x][pos.y] == 0) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    response = bfsStrategy(gameState, isHealingBullet);
+    if (response.has_value())
+        return response.value();
+
+    // std::cout << "nie ma heala" << ' ' << gameState.time << std::endl;
+    
     response = shootIfWillFireHitForSure(gameState);
     if (response.has_value()) 
     return response.value();
