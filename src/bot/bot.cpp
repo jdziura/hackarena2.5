@@ -120,7 +120,7 @@ void Bot::onFirstNextMove(const GameState& gameState) {
     initZoneName(gameState.map.tiles);
 }
 
-bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
+bool Bot::TankState::canSeeTank(const GameState& gameState, bool enemy) const {
     const int dim = bot.dim;
     int x = myPos.pos.x;
     int y = myPos.pos.y;
@@ -143,8 +143,14 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
         for (const TileVariant& object : gameState.map.tiles[x][y].objects) {
             if (std::holds_alternative<Tank>(object)) {
                 const Tank& tank = std::get<Tank>(object);
-                if (isEnemy(tank)) {
-                    return true;
+                if (enemy) {
+                    if (isEnemy(tank)) {
+                        return true;
+                    }
+                } else {
+                    if (!isEnemy(tank) && tank.ownerId != myId && tank.health != 100) {
+                        return true;
+                    }
                 }
             }
         }
@@ -153,6 +159,13 @@ bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
     return false;
 }
 
+bool Bot::TankState::canSeeEnemy(const GameState& gameState) const {
+    return canSeeTank(gameState, true);
+}
+
+bool Bot::TankState::canSeeLowHpAlly(const GameState& gameState) const {
+    return canSeeTank(gameState, false);
+}
 
 bool Bot::TankState::willBeHitByBullet(const GameState& gameState, const OrientedPosition& pos) const {
     int x = pos.pos.x;
@@ -257,6 +270,9 @@ std::optional<ResponseVariant> Bot::TankState::NextMove(const GameState& gameSta
         return response.value();
     }
 
+    response = healIfSeeingAlly(gameState);
+    if (response.has_value())
+        return response.value();
 
     // TODO: jakieś gówno XD niech będzie na razie ale potem można wyjebać
     if (lastPos == myPos && gen() % 16 == 0) {
@@ -367,6 +383,15 @@ std::optional<ResponseVariant> Bot::TankState::shootIfSeeingEnemy(
     return shootIf(gameState, [&](const GameState& gameState) {
         return canSeeEnemy(gameState);
     }, useLaserIfPossible, useDoubleBulletIfPossible);
+}
+
+std::optional<ResponseVariant> Bot::TankState::healIfSeeingAlly(const GameState& gameState) {
+    
+    if (canShootHealing(myTank) && canSeeLowHpAlly(gameState)) {
+        std::cout << "healing!" << std::endl;
+            return AbilityUse{AbilityType::fireHealingBullet};
+    }
+    return std::nullopt;
 }
 
 std::optional<ResponseVariant> Bot::TankState::shootIfWillFireHitForSure(
