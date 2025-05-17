@@ -301,7 +301,7 @@ inline Position closestBullet(const GameState& gameState, const Position& myPos)
     for (int i = 0; i < myPos.x; i++) {
         if (gameState.map.tiles[i][myPos.y].objects.size() > 0) {
             for (const auto& obj : gameState.map.tiles[i][myPos.y].objects) {
-                if (std::holds_alternative<Bullet>(obj)) {
+                if (std::holds_alternative<Bullet>(obj) && std::get<Bullet>(obj).type != BulletType::healing) {
                     const auto& bullet = std::get<Bullet>(obj);
                     if (bullet.direction == Direction::down) {
                         if (myPos.x - i < closestBulletDist) {
@@ -316,7 +316,7 @@ inline Position closestBullet(const GameState& gameState, const Position& myPos)
     for (int i = myPos.x + 1; i < gameState.map.tiles.size(); i++) {
         if (gameState.map.tiles[i][myPos.y].objects.size() > 0) {
             for (const auto& obj : gameState.map.tiles[i][myPos.y].objects) {
-                if (std::holds_alternative<Bullet>(obj)) {
+                if (std::holds_alternative<Bullet>(obj) && std::get<Bullet>(obj).type != BulletType::healing) {
                     const auto& bullet = std::get<Bullet>(obj);
                     if (bullet.direction == Direction::up) {
                         if (i - myPos.x < closestBulletDist) {
@@ -331,7 +331,7 @@ inline Position closestBullet(const GameState& gameState, const Position& myPos)
     for (int i = 0; i < myPos.y; i++) {
         if (gameState.map.tiles[myPos.x][i].objects.size() > 0) {
             for (const auto& obj : gameState.map.tiles[myPos.x][i].objects) {
-                if (std::holds_alternative<Bullet>(obj)) {
+                if (std::holds_alternative<Bullet>(obj) && std::get<Bullet>(obj).type != BulletType::healing) {
                     const auto& bullet = std::get<Bullet>(obj);
                     if (bullet.direction == Direction::right) {
                         if (myPos.y - i < closestBulletDist) {
@@ -346,7 +346,7 @@ inline Position closestBullet(const GameState& gameState, const Position& myPos)
     for (int i = myPos.y + 1; i < gameState.map.tiles[0].size(); i++) {
         if (gameState.map.tiles[myPos.x][i].objects.size() > 0) {
             for (const auto& obj : gameState.map.tiles[myPos.x][i].objects) {
-                if (std::holds_alternative<Bullet>(obj)) {
+                if (std::holds_alternative<Bullet>(obj) && std::get<Bullet>(obj).type != BulletType::healing) {
                     const auto& bullet = std::get<Bullet>(obj);
                     if (bullet.direction == Direction::left) {
                         if (i - myPos.y < closestBulletDist) {
